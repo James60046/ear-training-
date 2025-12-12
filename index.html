@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI輔助制自-線上語音循環播放音感訓練器</title>
+  <style>
+    :root {
+      --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#9ca3af; --border:#1f2937;
+      --btn:#1f2937; --btn-hover:#374151; --key-white:#e5e7eb; --key-black:#111827;
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Microsoft JhengHei","PingFang TC","Heiti TC",sans-serif;background:radial-gradient(1000px 600px at 80% -10%,#1f293766,transparent),radial-gradient(800px 500px at -10% 20%,#14532d66,transparent),var(--bg);color:var(--text)}
+    .container{max-width:1080px;margin:0 auto;padding:24px 16px 84px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+    .title{display:flex;align-items:center;gap:12px}
+    .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#16a34a,#22c55e);display:grid;place-items:center;color:#fff;font-weight:800}
+    h1{margin:0;font-size:22px;letter-spacing:.3px}
+    .panel{background:#111827ee;border:1px solid var(--border);border-radius:12px;padding:16px}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    @media (min-width:1000px){.grid{grid-template-columns:420px 1fr}}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .grow{flex:1 1 auto}
+    label{color:var(--muted);font-size:13px}
+    select,input[type=range]{width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+    .btn{background:var(--btn);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px 14px;cursor:pointer;transition:background .15s,transform .02s}
+    .btn:hover{background:var(--btn-hover)} .btn:active{transform:translateY(1px)}
+    .answers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .answer-btn{padding:12px 10px;background:#0b1220;border:1px solid var(--border);border-radius:12px;color:var(--text);cursor:pointer}
+    .score{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px;border-radius:12px;background:#0b1220;border:1px solid var(--border)}
+    .hint{color:var(--muted);font-size:13px}
+    .status-hints-container{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;justify-content:center}
+    .status-hint{font-size:15px;font-weight:600;padding:10px 16px;border-radius:8px;background:#0b1220;border:2px solid var(--border);transition:all 0.3s ease;white-space:nowrap;min-width:110px;text-align:center;position:relative}
+    .status-hint.active{color:#22c55e;border-color:#22c55e;background:linear-gradient(135deg,#14532d88,#22c55e44);box-shadow:0 0 16px rgba(34,197,94,0.4),inset 0 0 20px rgba(34,197,94,0.1);transform:scale(1.08);font-weight:700}
+    .status-hint.inactive{color:var(--muted);opacity:0.35;border-color:var(--border)}
+    .status-arrow{color:var(--muted);font-size:24px;font-weight:bold;opacity:0.5;transition:all 0.3s ease;padding:0 4px}
+    .status-arrow.active{color:#22c55e;opacity:1;transform:scale(1.3);text-shadow:0 0 8px rgba(34,197,94,0.6)}
+
+    /* Piano */
+    .kbd-wrap{margin-top:12px}
+    .piano{position:relative;height:160px;user-select:none}
+    .white-keys{display:flex;height:100%}
+    .white-key{position:relative;flex:1 1 0;background:var(--key-white);border:1px solid #374151;border-bottom-width:6px;border-radius:0 0 6px 6px;margin-right:-1px}
+    .white-key.active{background:#c7f9cc;border-color:#22c55e}
+    .black-key{position:absolute;top:0;height:62%;background:linear-gradient(#222,#000);border:1px solid #000;border-bottom-width:6px;border-radius:0 0 6px 6px;transform:translateX(-50%);z-index:5}
+    .black-key.active{background:#22c55e;border-color:#14532d}
+    .solfege{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:10px;background:#0b1220;font-size:14px}
+    .solfege b{color:#22c55e}
+    /* Key labels */
+    .key-label{position:absolute;left:50%;transform:translateX(-50%);bottom:6px;font-size:12px;line-height:1.05;font-weight:600;pointer-events:none;user-select:none;text-align:center;white-space:pre}
+    .key-label--white{color:#111827}
+    .key-label--black{color:#e5e7eb;font-size:11px;bottom:4px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title">
+        <div class="logo">♪</div>
+        <div>
+          <h1>AI輔助制自-線上語音循環播放音感訓練器</h1>
+          <div class="hint">單音：先播 3 次組內 C 做基準，再出題；用點鍵作答</div>
+        </div>
+      </div>
+      <button id="playBtn" class="btn">播放題目 (空白)</button>
+    </header>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="row">
+          <div class="grow">
+            <label for="mode">模式</label>
+            <select id="mode">
+              <option value="note">音高辨識（單音）</option>
+              <option value="interval_up">音程辨識（上行）</option>
+              <option value="interval_down">音程辨識（下行）</option>
+              <option value="interval_harm">音程辨識（和聲/同時）</option>
+              <option value="triad">和弦辨識（三和弦）</option>
+              <option value="seventh">和弦辨識（七和弦）</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="grow">
+            <label for="wave">音色</label>
+            <select id="wave">
+              <option value="sine">Sine</option>
+              <option value="triangle">Triangle</option>
+              <option value="square">Square</option>
+              <option value="sawtooth">Sawtooth</option>
+              <option value="piano">Piano（鋼琴-合成）</option>
+            </select>
+          </div>
+          <div style="width:160px">
+            <label for="volume">音量</label>
+            <input id="volume" type="range" min="0" max="1" step="0.01" value="0.25">
+          </div>
+        </div>
+
+        <!-- 單音出題音域限制：白鍵/全部 -->
+        <div class="row">
+          <div class="grow">
+            <label for="noteScope">單音出題內容</label>
+            <select id="noteScope">
+              <option value="all">白鍵 + 黑鍵（全部）</option>
+              <option value="white">只出白鍵（C D E F G A B）</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- 單音：自動公布答案計時 -->
+        <div class="row">
+          <div class="grow">
+            <label for="revealAfter">自動公布答案（秒）</label>
+            <select id="revealAfter">
+              <option value="1">1 秒</option>
+              <option value="3">3 秒</option>
+              <option value="5">5 秒</option>
+              <option value="7">7 秒</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="grow">
+            <label>目前組別（Cn–C(n+1)）</label>
+            <div class="row">
+              <button id="prevGroup" class="btn">◀ 上一組</button>
+              <div id="groupLabel" class="grow" style="text-align:center;font-weight:700">C4–C5</div>
+              <button id="nextGroup" class="btn">下一組 ▶</button>
+            </div>
+            <div class="hint" style="margin-top:6px">所有題目限制在此組，含上界 C。</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:8px">
+          <button id="repeatBtn" class="btn">重播 (R)</button>
+          <button id="giveUpBtn" class="btn">看答案</button>
+          <button id="nextBtn" class="btn">下一題 (N)</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row" style="justify-content:space-between;align-items:flex-end">
+          <div>
+            <div style="font-size:13px;color:#9ca3af">目前題目</div>
+            <div id="questionLabel" style="font-size:20px;font-weight:700">—</div>
+          </div>
+          <div class="score">
+            <div>✅ <span id="correctCount">0</span></div>
+            <div>❌ <span id="wrongCount">0</span></div>
+            <div>🎯 <span id="streak">0</span></div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div id="answers" class="answers"></div>
+        </div>
+
+        <div class="kbd-wrap">
+          <div class="hint">可直接點擊鋼琴鍵作答（單音模式）</div>
+          <div id="piano" class="piano"></div>
+          <div id="solfege" class="solfege">答案：—</div>
+          
+          <div id="statusHints" style="display:none;margin-top:12px">
+            <div class="status-hints-container">
+              <div id="hintRef" class="status-hint inactive">参考音</div>
+              <div id="arrow1" class="status-arrow">→</div>
+              <div id="hintQuestion" class="status-hint inactive">题目音</div>
+              <div id="arrow2" class="status-arrow">→</div>
+              <div id="hintAnswer" class="status-hint inactive">答案音</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // ---------- Notes / MIDI ----------
+    const PCN = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const SOLFEGE = ['Do','Di','Re','Ri','Mi','Fa','Fi','So','Si','La','Li','Ti'];
+    const MIDI_C1 = 24, MIDI_C7 = 96;
+    function midiToFreq(m){ return 440 * Math.pow(2,(m-69)/12); }
+    function midiToName(m){ return PCN[m%12] + (Math.floor(m/12)-1); }
+    // 黑鍵顯示升/降雙音名，例如 C#4/Db4
+    function midiBlackLabel(m){
+      const pc = m % 12;
+      const octave = Math.floor(m/12) - 1;
+      const sharp = PCN[pc] + octave;
+      const FLAT = {1:'Db',3:'Eb',6:'Gb',8:'Ab',10:'Bb'};
+      if (FLAT[pc]) return sharp + '\n' + FLAT[pc] + octave; // 兩行顯示，避免擠出鍵帽
+      return sharp;
+    }
+    function nameRange(cStart){ return midiToName(cStart) + '–' + midiToName(cStart+12); }
+    function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+    function shuffle(a){ const x=a.slice(); for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [x[i],x[j]]=[x[j],x[i]];} return x; }
+
+    // ---------- Audio ----------
+    let audioCtx, masterGain;
+    let __activeNodes = [];
+    function ensureAudio(){
+      if(!audioCtx){
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = Number(volumeEl.value || 0.25);
+        masterGain.connect(audioCtx.destination);
+      }
+      if(audioCtx.state==='suspended') audioCtx.resume();
+    }
+    function stopAllSounds(){
+      if (!__activeNodes.length) return;
+      __activeNodes.forEach(n=>{ try{ n.stop(0); }catch(_){} try{ n.disconnect(); }catch(_){} });
+      __activeNodes = [];
+    }
+    // 強制停止所有音頻、語音和定時器
+    function stopAllAudioAndSpeech(){
+      // 停止所有音頻
+      stopAllSounds();
+      // 停止語音合成
+      try {
+        speechSynthesis.cancel();
+      } catch(_) {}
+      // 清除自動公布答案的定時器
+      clearRevealTimer();
+    }
+    function playPianoTone(freq, dur=900, when=0){
+      ensureAudio();
+      const t0 = audioCtx.currentTime + when;
+      const t1 = t0 + dur/1000;
+      const releaseTail = 0.8; // 尾音延長（秒）- 增加至0.8秒
+
+      // Envelope (percussive)
+      const eg = audioCtx.createGain();
+      eg.gain.setValueAtTime(0.0001, t0);
+      eg.gain.exponentialRampToValueAtTime(1.0, t0 + 0.008);
+      // 主要音量衰減到較小值，保留尾音
+      eg.gain.exponentialRampToValueAtTime(0.08, t1); // 從0.02提高到0.08，讓尾音更明顯
+      // 尾音再緩慢淡出
+      eg.gain.exponentialRampToValueAtTime(0.0001, t1 + releaseTail);
+
+      // Gentle lowpass to soften highs
+      const lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(Math.min(6000, freq * 12), t0);
+      lp.Q.value = 0.8;
+      eg.connect(lp).connect(masterGain);
+
+      // 增加更多泛音，使音色更飽滿
+      const partials = [
+        { mult: 1.0, gain: 1.0, detune: -4 },      // 基音
+        { mult: 2.0, gain: 0.35, detune: +3 },    // 第二泛音（提高增益）
+        { mult: 3.0, gain: 0.22, detune: -1 },    // 第三泛音（提高增益）
+        { mult: 4.0, gain: 0.12, detune: +2 },    // 第四泛音（新增）
+        { mult: 5.0, gain: 0.08, detune: -2 },    // 第五泛音（新增）
+      ];
+      partials.forEach(p => {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq * p.mult, t0);
+        try { osc.detune.setValueAtTime(p.detune, t0); } catch(_){ }
+        g.gain.setValueAtTime(p.gain, t0);
+        osc.connect(g).connect(eg);
+        osc.start(t0);
+        osc.stop(t1 + releaseTail + 0.01);
+        __activeNodes.push(osc);
+        osc.onended = () => {
+          try { osc.disconnect(); } catch(_){ }
+          __activeNodes = __activeNodes.filter(n => n !== osc);
+        };
+      });
+    }
+
+    function playTone(freq, dur=900, type='sine', fade=15, when=0){
+      if (type === 'piano') return playPianoTone(freq, dur, when);
+      ensureAudio();
+      const t0 = audioCtx.currentTime + when, t1 = t0 + dur/1000;
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t0);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(1, t0+fade/1000);
+      g.gain.setValueAtTime(1, t1-fade/1000); g.gain.linearRampToValueAtTime(0.0001, t1);
+      o.connect(g).connect(masterGain);
+      o.start(t0);
+      o.stop(t1+0.02);
+      __activeNodes.push(o);
+      o.onended = () => {
+        try { o.disconnect(); } catch(_){ }
+        __activeNodes = __activeNodes.filter(n => n !== o);
+      };
+    }
+
+    // ---------- Elements ----------
+    const modeEl = document.getElementById('mode');
+    const waveEl = document.getElementById('wave');
+    const volumeEl = document.getElementById('volume');
+    const noteScopeEl = document.getElementById('noteScope');
+    const playBtn = document.getElementById('playBtn');
+    const repeatBtn = document.getElementById('repeatBtn');
+    const giveUpBtn = document.getElementById('giveUpBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const answersEl = document.getElementById('answers');
+    const questionLabel = document.getElementById('questionLabel');
+    const correctEl = document.getElementById('correctCount');
+    const wrongEl = document.getElementById('wrongCount');
+    const streakEl = document.getElementById('streak');
+    const pianoEl = document.getElementById('piano');
+    const solfegeEl = document.getElementById('solfege');
+    const prevGroupBtn = document.getElementById('prevGroup');
+    const nextGroupBtn = document.getElementById('nextGroup');
+    const groupLabelEl = document.getElementById('groupLabel');
+    const revealEl = document.getElementById('revealAfter');
+    const statusHintsEl = document.getElementById('statusHints');
+    const hintRefEl = document.getElementById('hintRef');
+    const hintQuestionEl = document.getElementById('hintQuestion');
+    const hintAnswerEl = document.getElementById('hintAnswer');
+    const arrow1El = document.getElementById('arrow1');
+    const arrow2El = document.getElementById('arrow2');
+
+    // ---------- State ----------
+    const state = {
+      wave:'sine',
+      score:{correct:0,wrong:0,streak:0},
+      groupC:60, // C4
+      current:null,
+      noteScope:'all', // 'all' | 'white'
+      revealSeconds:5 // 1 | 3 | 5 | 7（單音模式和音程模式用）
+    };
+    function currentLow(){ return state.groupC; }
+    function currentHigh(){ return state.groupC + 12; } // 含上界 C
+
+    // ---------- Piano ----------
+    function buildPiano(){
+      pianoEl.innerHTML = '';
+      const whiteWrap = document.createElement('div');
+      whiteWrap.className = 'white-keys';
+      const whiteSteps = [0,2,4,5,7,9,11,12]; // C D E F G A B C
+      const whiteMidis = whiteSteps.map(st => state.groupC + st);
+      whiteMidis.forEach(m => {
+        const wk = document.createElement('div');
+        wk.className = 'white-key';
+        wk.dataset.midi = String(m);
+        wk.addEventListener('mousedown', ()=>playKey(m));
+        wk.addEventListener('touchstart', (e)=>{e.preventDefault(); playKey(m);}, {passive:false});
+        const lbl = document.createElement('div');
+        lbl.className = 'key-label key-label--white';
+        lbl.textContent = midiToName(m);
+        wk.appendChild(lbl);
+        whiteWrap.appendChild(wk);
+      });
+      pianoEl.appendChild(whiteWrap);
+
+      const whiteWidth = 100 / whiteSteps.length; // 8
+      [
+        { st:1, afterWhiteIdx:0 }, // C#
+        { st:3, afterWhiteIdx:1 }, // D#
+        { st:6, afterWhiteIdx:3 }, // F#
+        { st:8, afterWhiteIdx:4 }, // G#
+        { st:10,afterWhiteIdx:5 }  // A#
+      ].forEach(b=>{
+        const m = state.groupC + b.st;
+        const left = (b.afterWhiteIdx+1)*whiteWidth;
+        const bk = document.createElement('div');
+        bk.className = 'black-key';
+        bk.dataset.midi = String(m);
+        bk.style.left = left + '%';
+        bk.style.width = (whiteWidth*0.6) + '%';
+        bk.addEventListener('mousedown', ()=>playKey(m));
+        bk.addEventListener('touchstart', (e)=>{e.preventDefault(); playKey(m);}, {passive:false});
+        const lbl = document.createElement('div');
+        lbl.className = 'key-label key-label--black';
+        lbl.textContent = midiBlackLabel(m);
+        bk.appendChild(lbl);
+        pianoEl.appendChild(bk);
+      });
+
+      groupLabelEl.textContent = nameRange(state.groupC);
+    }
+    function highlightKeys(midis, ms){
+      const set = new Set(midis.map(Number));
+      const nodes = pianoEl.querySelectorAll('[data-midi]');
+      nodes.forEach(n => { if(set.has(Number(n.dataset.midi))) n.classList.add('active'); });
+      setTimeout(()=>nodes.forEach(n=>n.classList.remove('active')), ms);
+    }
+    // 手动高亮钢琴键（不自动熄灭）
+    function highlightKeysManual(midis){
+      const set = new Set(midis.map(Number));
+      const nodes = pianoEl.querySelectorAll('[data-midi]');
+      nodes.forEach(n => { if(set.has(Number(n.dataset.midi))) n.classList.add('active'); });
+    }
+    // 清除指定钢琴键的高亮
+    function clearKeysHighlight(midis){
+      const set = new Set(midis.map(Number));
+      const nodes = pianoEl.querySelectorAll('[data-midi]');
+      nodes.forEach(n => { if(set.has(Number(n.dataset.midi))) n.classList.remove('active'); });
+    }
+    // 答案音：鋼琴鍵與「答案音」提示字亮起
+    function highlightAnswer(midi){
+      const midis = Array.isArray(midi) ? midi : [midi];
+      const set = new Set(midis.map(Number));
+      const nodes = pianoEl.querySelectorAll('[data-midi]');
+      nodes.forEach(n => { if(set.has(Number(n.dataset.midi))) n.classList.add('active'); });
+      updateStatusHint(hintAnswerEl, true);
+    }
+    // 答案音：鋼琴鍵與「答案音」提示字一起熄滅
+    function clearAnswerHighlight(midi){
+      const midis = Array.isArray(midi) ? midi : [midi];
+      const set = new Set(midis.map(Number));
+      const nodes = pianoEl.querySelectorAll('[data-midi]');
+      nodes.forEach(n => { if(set.has(Number(n.dataset.midi))) n.classList.remove('active'); });
+      updateStatusHint(null, false);
+    }
+    // 只看答案：只高亮鋼琴鍵，不播放音頻，不影響其他功能
+    function showAnswerOnly(){
+      if(!state.current) return;
+      const q = state.current;
+      // 不清除定時器，保持自動公布答案功能正常運作
+      // 不改變狀態提示，保持當前狀態
+      
+      if(q.type === 'note'){
+        // 單音模式：只高亮鋼琴鍵，不改變狀態提示
+        const ansMidi = Number(q.answerKey);
+        const midis = [ansMidi];
+        const set = new Set(midis.map(Number));
+        const nodes = pianoEl.querySelectorAll('[data-midi]');
+        nodes.forEach(n => { if(set.has(Number(n.dataset.midi))) n.classList.add('active'); });
+        solfegeEl.innerHTML = '答案：<b>'+midiToName(ansMidi)+'</b>';
+      } else if(q.type === 'interval_up' || q.type === 'interval_down'){
+        // 音程辨識模式：只高亮鋼琴鍵，不改變狀態提示
+        // 需要高亮兩個音：baseMidi（基準音）和 ansMidi（目標音）
+        const ansMidi = Number(q.answerKey);
+        const baseMidi = Number(q.baseMidi);
+        const intervalSteps = Number(q.intervalSteps);
+        const midis = [baseMidi, ansMidi]; // 高亮兩個音
+        const set = new Set(midis.map(Number));
+        const nodes = pianoEl.querySelectorAll('[data-midi]');
+        nodes.forEach(n => { if(set.has(Number(n.dataset.midi))) n.classList.add('active'); });
+        const answerText = formatIntervalAnswer(baseMidi, ansMidi, intervalSteps);
+        solfegeEl.innerHTML = '答案：<b>'+answerText+'</b>';
+      } else {
+        // 其他模式（和聲音程、和弦）直接提交答案
+        submitAnswer(q.answerKey);
+      }
+    }
+    function solfegeTextForMidi(midi){
+      const pc = Number(midi) % 12;
+      const map = ['do','升do','re','升re','mi','fa','升fa','so','升so','la','降si','si'];
+      return map[pc];
+    }
+    // 格式化音程答案显示：例如 "C4 to B4 大七度"
+    function formatIntervalAnswer(baseMidi, targetMidi, intervalSteps){
+      const baseName = midiToName(baseMidi);
+      const targetName = midiToName(targetMidi);
+      const interval = INTERVALS.find(i => i.st === intervalSteps);
+      const intervalLabel = interval ? interval.label : '';
+      return `${baseName} to ${targetName} ${intervalLabel}`;
+    }
+    function playKey(midi){
+      playTone(midiToFreq(midi), 900, state.wave);
+      highlightKeys([midi], 900);
+      // 單音模式顯示音名，音程模式顯示唱名
+      if (state.current && state.current.type === 'note') {
+        solfegeEl.innerHTML = '答案：<b>'+midiToName(midi)+'</b>';
+      } else {
+        solfegeEl.innerHTML = '答案：<b>'+solfegeTextForMidi(midi)+'</b>';
+      }
+      // 單音模式：點鍵即作答（允許多次嘗試）
+      if (state.current && state.current.type === 'note') {
+        submitAnswer(midi);
+      }
+      // 音程辨識（上行/下行）：點鍵即作答
+      if (state.current && (state.current.type === 'interval_up' || state.current.type === 'interval_down')) {
+        submitAnswer(midi);
+      }
+    }
+    // ---------- Status Hints ----------
+    function updateStatusHint(hintEl, isActive){
+      // 重置所有提示字和箭头
+      hintRefEl.classList.remove('active', 'inactive');
+      hintQuestionEl.classList.remove('active', 'inactive');
+      hintAnswerEl.classList.remove('active', 'inactive');
+      arrow1El.classList.remove('active');
+      arrow2El.classList.remove('active');
+      
+      // 设置所有提示字为未激活状态
+      hintRefEl.classList.add('inactive');
+      hintQuestionEl.classList.add('inactive');
+      hintAnswerEl.classList.add('inactive');
+      
+      if(hintEl && isActive){
+        hintEl.classList.remove('inactive');
+        hintEl.classList.add('active');
+        
+        // 根据激活的提示字，高亮相应的箭头
+        if(hintEl === hintRefEl){
+          // 参考音激活时，箭头不激活
+        } else if(hintEl === hintQuestionEl){
+          // 题目音激活时，箭头1激活（从参考音到题目音）
+          arrow1El.classList.add('active');
+        } else if(hintEl === hintAnswerEl){
+          // 答案音激活时，箭头2激活（从题目音到答案音）
+          arrow2El.classList.add('active');
+        }
+      }
+    }
+    function showStatusHints(show){
+      if(show){
+        statusHintsEl.style.display = 'block';
+      } else {
+        statusHintsEl.style.display = 'none';
+        updateStatusHint(null, false);
+      }
+    }
+
+    // ---------- Questions ----------
+    function isBlackPC(pc){ return pc===1||pc===3||pc===6||pc===8||pc===10; }
+    function randomMidiInGroup(){
+      const low=currentLow(), high=currentHigh();
+      if (state.noteScope === 'white') {
+        const whites=[]; for(let m=low;m<=high;m++){ if(!isBlackPC(m%12)) whites.push(m); }
+        return whites[Math.floor(Math.random()*whites.length)];
+      }
+      return randInt(low, high);
+    }
+
+    // 單音：先播 3 次 C，再播題目音；播放時不亮鍵
+    function genNoteQuestion(){
+      const ans = randomMidiInGroup();
+      function play(){
+        ensureAudio();
+        const ref = currentLow();       // 該組 C
+        const refDur = 600, refGap = 0.15;
+        const questionDur = 1000; // 题目音播放时长（毫秒）
+        
+        // 显示参考音提示
+        updateStatusHint(hintRefEl, true);
+        
+        for (let i=0;i<3;i++){
+          const when = i*(refDur/1000 + refGap);
+          playTone(midiToFreq(ref), refDur, state.wave, 10, when);
+        }
+        
+        // 计算题目音开始播放的时间（秒）
+        const qWhen = 3*(refDur/1000 + refGap);
+        const qWhenMs = qWhen * 1000;
+        
+        // 在题目音播放时，切换提示字
+        setTimeout(() => {
+          updateStatusHint(hintQuestionEl, true);
+        }, qWhenMs);
+        
+        playTone(midiToFreq(ans), questionDur, state.wave, 15, qWhen);
+        solfegeEl.innerHTML = '答案：—';
+        
+        // 返回题目音播放完成的时间（相对于 audioCtx.currentTime）
+        const questionEndTime = qWhen + questionDur / 1000;
+        return questionEndTime;
+      }
+      return {
+        type:'note',
+        label:'單音：先聽 3 次 C 基準音，之後請在鋼琴上點選答案',
+        answerKey:ans,
+        options:[],
+        play
+      };
+    }
+
+    const INTERVALS = [
+      { st:1, label:'小二度' },{ st:2, label:'大二度' },{ st:3, label:'小三度' },{ st:4, label:'大三度' },
+      { st:5, label:'完全四度' },{ st:6, label:'三全音' },{ st:7, label:'完全五度' },{ st:8, label:'小六度' },
+      { st:9, label:'大六度' },{ st:10,label:'小七度' },{ st:11,label:'大七度' },{ st:12,label:'八度' },
+    ];
+    const TRIADS = [
+      { q:'maj', label:'大三和弦', steps:[0,4,7] },
+      { q:'min', label:'小三和弦', steps:[0,3,7] },
+      { q:'dim', label:'減三和弦', steps:[0,3,6] },
+      { q:'aug', label:'增三和弦', steps:[0,4,8] },
+    ];
+    const SEVENTHS = [
+      { q:'maj7', label:'大七和弦 (maj7)', steps:[0,4,7,11] },
+      { q:'7',    label:'屬七和弦 (7)',     steps:[0,4,7,10] },
+      { q:'min7', label:'小七和弦 (min7)',  steps:[0,3,7,10] },
+      { q:'m7b5', label:'半減七 (m7♭5)',    steps:[0,3,6,10] },
+      { q:'dim7', label:'減七 (dim7)',       steps:[0,3,6,9]  },
+    ];
+
+    function genInterval(kind){
+      const intv = shuffle(INTERVALS)[0];
+      const low=currentLow(), high=currentHigh();
+      let base, other;
+      if(kind==='up'){
+        // 上行：base是低音，other是高音（base + intv.st）
+        base = randInt(low, Math.max(low, high-intv.st));
+        other = base + intv.st;
+        // 確保 other 確實比 base 高
+        if(other <= base) other = base + intv.st;
+      } else if(kind==='down'){
+        // 下行：base是高音，other是低音（base - intv.st）
+        base = randInt(Math.min(high, low+intv.st), high);
+        other = base - intv.st;
+        // 確保 other 確實比 base 低
+        if(other >= base) other = base - intv.st;
+      } else {
+        base = randInt(low, Math.max(low, high-intv.st));
+        other = base + intv.st;
+      }
+
+      // 和聲音程模式保持原來的選項按鈕方式
+      if(kind==='harm'){
+        const label = '請辨識音程（和聲/同時）';
+        const answerKey = String(intv.st);
+        const opts = shuffle(INTERVALS).slice(0,6).map(i=>({key:String(i.st), text:i.label}));
+        if(!opts.find(o=>o.key===answerKey)) opts[0]={key:answerKey, text:intv.label};
+        const options = shuffle(opts);
+
+        function play(){
+          const bf=midiToFreq(base), of=midiToFreq(other);
+          playTone(bf,1100,state.wave,15,0);
+          playTone(of,1100,state.wave,15,0);
+          highlightKeys([base,other],1100);
+          return 1.1; // 返回播放时长（秒），虽然此模式不使用自动公布答案
+        }
+        return { type:'interval_harm', label, answerKey, options, play };
+      }
+
+      // 上行/下行模式：使用循環播放和鋼琴鍵盤作答
+      const label = kind==='up'?'音程辨識（上行）：先聽 3 次基準音，之後請在鋼琴上點選目標音':kind==='down'?'音程辨識（下行）：先聽 3 次基準音，之後請在鋼琴上點選目標音':'請辨識音程（和聲/同時）';
+      
+      // 對於上行：base是低音，other是高音（base + intv.st）
+      // 對於下行：base是高音，other是低音（base - intv.st）
+      // 但為了讓播放順序更清晰，我們需要確保：
+      // 上行：先播放低音（base），再播放高音（other）
+      // 下行：先播放高音（base），再播放低音（other）
+      
+      // 保存基準音、目標音和音程步數
+      const answerKey = other; // 目標音的MIDI值
+      const baseMidi = base;
+      const intervalSteps = intv.st; // 正確的音程步數
+
+      function play(){
+        ensureAudio();
+        const refDur = 600, refGap = 0.15;
+        const refMidi = currentLow(); // 參考音永遠是 C
+        const firstNoteDur = 600; // 第一个音播放时长（毫秒）
+        const secondNoteDur = 1000; // 第二个音播放时长（毫秒）
+        const gapBetweenNotes = 0.7; // 两个音之间的间隔（秒）
+        
+        // 显示参考音提示
+        updateStatusHint(hintRefEl, true);
+        
+        // 先播放參考音 C 3次（循環播放）
+        for (let i=0;i<3;i++){
+          const when = i*(refDur/1000 + refGap);
+          playTone(midiToFreq(refMidi), refDur, state.wave, 10, when);
+        }
+        
+        // 计算题目音开始播放的时间（秒）
+        // 在3次參考音播放完後，稍等片刻再播放題目音，避免音頻重疊
+        const gapAfterRef = 0.2; // 參考音和題目音之間的間隔
+        const qWhen = 3*(refDur/1000 + refGap) + gapAfterRef;
+        const qWhenMs = qWhen * 1000;
+        
+        // 在题目音播放时，切换提示字
+        setTimeout(() => {
+          updateStatusHint(hintQuestionEl, true);
+        }, qWhenMs);
+        
+        // 播放題目音：先播放題目音的第一個音（base），再播放題目音的第二個音（other）
+        // 上行：base（低）→ other（高）；下行：base（高）→ other（低）
+        // 播放題目音時不亮鋼琴鍵，只有在播放答案音時才亮
+        playTone(midiToFreq(base), firstNoteDur, state.wave, 15, qWhen);
+        playTone(midiToFreq(other), secondNoteDur, state.wave, 15, qWhen + gapBetweenNotes);
+        solfegeEl.innerHTML = '答案：—';
+        
+        // 返回题目音播放完成的时间（相对于 audioCtx.currentTime）
+        // 第二个音开始时间 + 第二个音播放时长
+        const questionEndTime = qWhen + gapBetweenNotes + secondNoteDur / 1000;
+        return questionEndTime;
+      }
+      return { 
+        type:'interval_'+kind, 
+        label, 
+        answerKey:answerKey, // 目標音MIDI值
+        baseMidi:baseMidi, // 基準音MIDI值
+        intervalSteps:intervalSteps, // 正確音程步數
+        options:[], 
+        play 
+      };
+    }
+    function chooseRoot(steps){
+      const low=currentLow(), high=currentHigh();
+      return randInt(low, Math.max(low, high - Math.max(...steps)));
+    }
+    function genTriad(){ const t=shuffle(TRIADS)[0]; const r=chooseRoot(t.steps); const tones=t.steps.map(s=>r+s); const freqs=tones.map(midiToFreq);
+      const options = shuffle(TRIADS).map(x=>({key:x.q, text:x.label}));
+      function play(){ freqs.forEach(f=>playTone(f,1100,state.wave,15,0)); highlightKeys(tones,1100); }
+      return { type:'triad', label:'請辨識和弦（三和弦）', answerKey:t.q, options, play };
+    }
+    function genSeventh(){ const s=shuffle(SEVENTHS)[0]; const r=chooseRoot(s.steps); const tones=s.steps.map(x=>r+x); const freqs=tones.map(midiToFreq);
+      const options = shuffle(SEVENTHS).map(x=>({key:x.q, text:x.label}));
+      function play(){ freqs.forEach(f=>playTone(f,1200,state.wave,15,0)); highlightKeys(tones,1200); }
+      return { type:'seventh', label:'請辨識和弦（七和弦）', answerKey:s.q, options, play };
+    }
+
+    // ---------- Flow ----------
+    function renderAnswers(q){
+      answersEl.innerHTML='';
+      if (q.type === 'note') {
+        const tip = document.createElement('div');
+        tip.className = 'hint';
+        tip.textContent = '請直接在下方鋼琴上點選你聽到的音高';
+        answersEl.appendChild(tip);
+        return;
+      }
+      // 音程辨識（上行/下行）也用鋼琴鍵盤作答
+      if (q.type === 'interval_up' || q.type === 'interval_down') {
+        const tip = document.createElement('div');
+        tip.className = 'hint';
+        tip.textContent = '請直接在下方鋼琴上點選你聽到的目標音';
+        answersEl.appendChild(tip);
+        return;
+      }
+      // 其他模式（和聲音程、和弦）仍用選項按鈕
+      q.options.forEach(opt=>{
+        const b=document.createElement('button');
+        b.className='answer-btn';
+        b.textContent=opt.text;
+        b.addEventListener('click',()=>submitAnswer(opt.key));
+        answersEl.appendChild(b);
+      });
+    }
+    // ---------- Auto reveal (單音) ----------
+    let __revealTimerId = null;
+    // 确保语音列表已加载
+    function ensureVoicesLoaded(callback){
+      const voices = speechSynthesis.getVoices();
+      if(voices.length > 0){
+        callback();
+      } else {
+        // 如果语音列表未加载，等待加载完成
+        speechSynthesis.onvoiceschanged = () => {
+          speechSynthesis.onvoiceschanged = null;
+          callback();
+        };
+      }
+    }
+    
+    function speakText(text, onEnd){
+      try {
+        ensureVoicesLoaded(() => {
+          const u = new SpeechSynthesisUtterance(String(text));
+          u.lang = 'en-US';
+          
+          // 优化语音参数，使其更饱满、更人性化
+          u.rate = 0.85;  // 语速稍慢，更清晰（默认1.0，范围0.1-10）
+          u.pitch = 1.1;  // 音调稍高，更生动（默认1.0，范围0-2）
+          u.volume = 1.0; // 音量最大（默认1.0，范围0-1）
+          
+          // 尝试选择更自然的语音
+          const voices = speechSynthesis.getVoices();
+          // 优先选择更自然的语音（通常名称包含 "Natural" 或 "Neural"）
+          const preferredVoices = voices.filter(v => 
+            v.lang.startsWith('en') && (
+              v.name.toLowerCase().includes('natural') ||
+              v.name.toLowerCase().includes('neural') ||
+              v.name.toLowerCase().includes('premium') ||
+              v.name.toLowerCase().includes('enhanced')
+            )
+          );
+          if(preferredVoices.length > 0){
+            u.voice = preferredVoices[0];
+          } else {
+            // 如果没有找到优先语音，选择质量较好的英文语音
+            const englishVoices = voices.filter(v => v.lang.startsWith('en-US'));
+            if(englishVoices.length > 0){
+              // 优先选择非系统默认的语音（通常质量更好）
+              const nonDefaultVoice = englishVoices.find(v => !v.name.toLowerCase().includes('sapi')) || englishVoices[0];
+              u.voice = nonDefaultVoice;
+            }
+          }
+          
+          if (typeof onEnd === 'function') {
+            u.onend = () => { try { onEnd(); } catch(_) {} };
+          }
+          speechSynthesis.cancel();
+          speechSynthesis.speak(u);
+        });
+      } catch(_) {}
+    }
+    function englishNoteNameForMidi(midi){
+      const pc = Number(midi) % 12;
+      const octave = Math.floor(Number(midi) / 12) - 1; // 获取组号（八度）
+      const FLAT_MAP = {1:'Db',3:'Eb',6:'Gb',8:'Ab',10:'Bb'};
+      const sharpName = PCN[pc];
+      let text = sharpName.replace('#', '-Sharp');
+      // 添加组号数字，用英文单词表示以便语音合成
+      const numberWords = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+      const octaveWord = octave >= 0 && octave < 10 ? numberWords[octave] : String(octave);
+      text += ' ' + octaveWord;
+      
+      if(FLAT_MAP[pc]){
+        const flatName = FLAT_MAP[pc];
+        text += ', ' + flatName.replace('b', '-flat') + ' ' + octaveWord;
+      }
+      return text;
+    }
+    // 生成音程語音文本，例如 "C to B, major seventh"
+    function intervalSpeechText(baseMidi, targetMidi, intervalSteps){
+      // 獲取基準音和目標音的英文名稱（用於語音）
+      // 使用 englishNoteNameForMidi 但只取第一個名稱（主要名稱）
+      const baseFullName = englishNoteNameForMidi(baseMidi);
+      const targetFullName = englishNoteNameForMidi(targetMidi);
+      // 只取第一個名稱（主要名稱），去掉逗號後的部分
+      const baseName = baseFullName.split(',')[0].trim();
+      const targetName = targetFullName.split(',')[0].trim();
+      
+      // 獲取音程度數的英文名稱
+      const interval = INTERVALS.find(i => i.st === intervalSteps);
+      let intervalName = '';
+      if(interval){
+        // 將中文音程名稱轉換為英文
+        const intervalMap = {
+          '小二度': 'minor second',
+          '大二度': 'major second',
+          '小三度': 'minor third',
+          '大三度': 'major third',
+          '完全四度': 'perfect fourth',
+          '三全音': 'tritone',
+          '完全五度': 'perfect fifth',
+          '小六度': 'minor sixth',
+          '大六度': 'major sixth',
+          '小七度': 'minor seventh',
+          '大七度': 'major seventh',
+          '八度': 'octave'
+        };
+        intervalName = intervalMap[interval.label] || interval.label;
+      }
+      
+      return `${baseName} to ${targetName}, ${intervalName}`;
+    }
+    function clearRevealTimer(){
+      if(__revealTimerId){ clearTimeout(__revealTimerId); __revealTimerId=null; }
+    }
+    function scheduleReveal(questionEndTime){
+      clearRevealTimer();
+      if(!state.current || (state.current.type !== 'note' && state.current.type !== 'interval_up' && state.current.type !== 'interval_down')) return;
+      const sec = Number(state.revealSeconds||0);
+      if(!sec || Number.isNaN(sec)) return;
+      
+      // 如果提供了题目音播放完成的时间，从那个时间点开始计时
+      // 否则从当前时间开始计时（兼容旧代码）
+      let delayMs = sec * 1000;
+      if(questionEndTime !== undefined && questionEndTime !== null){
+        ensureAudio();
+        const currentTime = audioCtx.currentTime;
+        const elapsed = currentTime - questionEndTime;
+        // 如果题目音已经播放完成，立即开始计时
+        // 如果题目音还在播放，等待播放完成后再计时
+        if(elapsed >= 0){
+          // 题目音已经播放完成，从当前时间开始计时
+          delayMs = sec * 1000;
+        } else {
+          // 题目音还在播放，等待播放完成后再计时
+          delayMs = (-elapsed * 1000) + (sec * 1000);
+        }
+      }
+      
+      __revealTimerId = setTimeout(()=>{
+        if(!state.current || state.current.__answered) return;
+        const ansMidi = Number(state.current.answerKey);
+        
+        // 播放答案音符
+        if(state.current.type === 'note'){
+          // 單音模式：只播放目標音
+          // 激活答案音状态提示
+          highlightAnswer(ansMidi);
+          
+          const answerFreq = midiToFreq(ansMidi);
+          playTone(answerFreq, 1000, state.wave, 15, 0);
+          // 播放答案音時才顯示「答案：」使用音名
+          solfegeEl.innerHTML = '答案：<b>'+midiToName(ansMidi)+'</b>';
+          
+          // 等音符播放完成後再念語音
+          setTimeout(() => {
+            const engName = englishNoteNameForMidi(ansMidi);
+            speakText(engName, () => {
+              // 語音播畢後，先讓答案燈號一起熄滅，再稍等出下一題
+              clearAnswerHighlight(ansMidi);
+              setTimeout(()=>{ newQuestion(); }, 600);
+            });
+          }, 1000); // 等待音符播放完成（1000ms）
+        } else if(state.current.type === 'interval_up' || state.current.type === 'interval_down'){
+          // 音程辨識：播放題目音（題目音的第一個音+第二個音）
+          const baseMidi = Number(state.current.baseMidi); // 題目音的第一個音
+          const intervalSteps = Number(state.current.intervalSteps);
+          
+          // 激活答案音状态提示
+          updateStatusHint(hintAnswerEl, true);
+          
+          if(state.current.type === 'interval_up'){
+            // 上行：base（低）→ ansMidi（高）
+            // 与音频同步高亮：先高亮第一个音，再高亮第二个音，保持高亮直到语音播放完成
+            playTone(midiToFreq(baseMidi), 600, state.wave, 15, 0);
+            highlightKeysManual([baseMidi]);
+            
+            playTone(midiToFreq(ansMidi), 1000, state.wave, 15, 0.7);
+            setTimeout(()=>highlightKeysManual([ansMidi]), 700);
+            
+            // 播放答案音時才顯示「答案：」格式為題目音的音程，例如 "A4 to B4 大二度"
+            const answerText = formatIntervalAnswer(baseMidi, ansMidi, intervalSteps);
+            solfegeEl.innerHTML = '答案：<b>'+answerText+'</b>';
+          } else {
+            // 下行：base（高）→ ansMidi（低）
+            // 与音频同步高亮：先高亮第一个音，再高亮第二个音，保持高亮直到语音播放完成
+            playTone(midiToFreq(baseMidi), 600, state.wave, 15, 0);
+            highlightKeysManual([baseMidi]);
+            
+            playTone(midiToFreq(ansMidi), 1000, state.wave, 15, 0.7);
+            setTimeout(()=>highlightKeysManual([ansMidi]), 700);
+            
+            // 播放答案音時才顯示「答案：」格式為題目音的音程，例如 "D4 to G4 完全四度"
+            const answerText = formatIntervalAnswer(baseMidi, ansMidi, intervalSteps);
+            solfegeEl.innerHTML = '答案：<b>'+answerText+'</b>';
+          }
+          
+          // 等音程播放完成後再念語音（600ms基準音 + 1000ms目標音 + 100ms間隔）
+          setTimeout(() => {
+            const speechText = intervalSpeechText(baseMidi, ansMidi, intervalSteps);
+            speakText(speechText, () => {
+              // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再稍等出下一題
+              clearKeysHighlight([baseMidi, ansMidi]);
+              updateStatusHint(null, false);
+              setTimeout(()=>{ newQuestion(); }, 600);
+            });
+          }, 1700); // 等待音程播放完成（1700ms）
+        }
+      }, delayMs);
+    }
+    function setQuestion(q){
+      state.current=q;
+      state.current.__answered=false;
+      state.current.__countedWrong=false; // 單音模式：本題錯誤只計一次
+      questionLabel.textContent=q.label;
+      renderAnswers(q);
+      solfegeEl.innerHTML='答案：—';
+      clearRevealTimer();
+      
+      // 清除所有鋼琴鍵的高亮
+      const nodes = pianoEl.querySelectorAll('[data-midi]');
+      nodes.forEach(n => n.classList.remove('active'));
+      
+      // 單音模式和音程辨識（上行/下行）显示提示字区域
+      if(q.type === 'note' || q.type === 'interval_up' || q.type === 'interval_down'){
+        showStatusHints(true);
+        updateStatusHint(null, false); // 初始状态：都不亮
+      } else {
+        showStatusHints(false);
+      }
+    }
+    function newQuestion(){
+      // 強制停止上一題尚未結束的聲音、語音和定時器，避免音頻相撞
+      stopAllAudioAndSpeech();
+      let q;
+      const m=modeEl.value;
+      if(m==='note') q=genNoteQuestion();
+      else if(m==='interval_up') q=genInterval('up');
+      else if(m==='interval_down') q=genInterval('down');
+      else if(m==='interval_harm') q=genInterval('harm');
+      else if(m==='triad') q=genTriad();
+      else q=genSeventh();
+      setQuestion(q);
+      
+      // 记录播放开始时间，计算题目音播放完成的绝对时间
+      ensureAudio();
+      const playStartTime = audioCtx.currentTime;
+      const questionEndTimeRelative = q.play();
+      
+      if(q.type==='note' || q.type==='interval_up' || q.type==='interval_down'){
+        // 计算题目音播放完成的绝对时间
+        const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative;
+        scheduleReveal(questionEndTimeAbsolute);
+      }
+    }
+
+    function submitAnswer(chosen){
+      const q=state.current; if(!q) return;
+      clearRevealTimer();
+      let ok=false;
+      if(q.type==='note'){ 
+        ok=Number(chosen)===Number(q.answerKey); 
+      } else if(q.type==='interval_up' || q.type==='interval_down'){
+        // 音程辨識：點擊的音應該等於正確的目標音
+        const clickedMidi = Number(chosen);
+        ok = clickedMidi === Number(q.answerKey);
+      } else { 
+        ok=String(chosen)===String(q.answerKey); 
+      }
+      q.__answered = true;
+
+      if (ok) {
+        state.score.correct++;
+        state.score.streak++;
+        
+        // 單音模式：答對時顯示答案音提示並播放答案
+        if (q.type === 'note') {
+          const ansMidi = Number(q.answerKey);
+          const answerFreq = midiToFreq(ansMidi);
+          playTone(answerFreq, 1000, state.wave, 15, 0);
+          // 答案音鍵與提示字同步亮 1000ms，然後一起熄滅
+          highlightAnswer(ansMidi);
+          setTimeout(()=>{ clearAnswerHighlight(ansMidi); }, 1000);
+          // 播放答案音時才顯示「答案：」使用音名
+          solfegeEl.innerHTML = '答案：<b>'+midiToName(ansMidi)+'</b>';
+        }
+        // 音程辨識：答對時顯示答案音提示並播放題目音
+        if (q.type === 'interval_up' || q.type === 'interval_down') {
+          const ansMidi = Number(q.answerKey);
+          const baseMidi = Number(q.baseMidi); // 題目音的第一個音
+          const intervalSteps = Number(q.intervalSteps);
+          
+          // 激活答案音状态提示
+          updateStatusHint(hintAnswerEl, true);
+          
+          // 播放題目音：先播放題目音的第一個音，再播放題目音的第二個音
+          // 与音频同步高亮：先高亮第一个音，再高亮第二个音，保持高亮直到语音播放完成
+          if(q.type === 'interval_up'){
+            // 上行：base（低）→ ansMidi（高）
+            playTone(midiToFreq(baseMidi), 600, state.wave, 15, 0);
+            highlightKeysManual([baseMidi]);
+            
+            playTone(midiToFreq(ansMidi), 1000, state.wave, 15, 0.7);
+            setTimeout(()=>highlightKeysManual([ansMidi]), 700);
+            
+            // 播放答案音時才顯示「答案：」格式為題目音的音程，例如 "A4 to B4 大二度"
+            const answerText = formatIntervalAnswer(baseMidi, ansMidi, intervalSteps);
+            solfegeEl.innerHTML = '答案：<b>'+answerText+'</b>';
+          } else {
+            // 下行：base（高）→ ansMidi（低）
+            playTone(midiToFreq(baseMidi), 600, state.wave, 15, 0);
+            highlightKeysManual([baseMidi]);
+            
+            playTone(midiToFreq(ansMidi), 1000, state.wave, 15, 0.7);
+            setTimeout(()=>highlightKeysManual([ansMidi]), 700);
+            
+            // 播放答案音時才顯示「答案：」格式為題目音的音程，例如 "D4 to G4 完全四度"
+            const answerText = formatIntervalAnswer(baseMidi, ansMidi, intervalSteps);
+            solfegeEl.innerHTML = '答案：<b>'+answerText+'</b>';
+          }
+          
+          // 等音程播放完成後再念語音
+          setTimeout(() => {
+            const speechText = intervalSpeechText(baseMidi, ansMidi, intervalSteps);
+            speakText(speechText, () => {
+              // 語音播畢後，先讓答案燈號和狀態提示一起熄滅
+              clearKeysHighlight([baseMidi, ansMidi]);
+              updateStatusHint(null, false);
+            });
+          }, 1700); // 等待音程播放完成（1700ms）
+        }
+      } else {
+        // 單音模式：同一題錯誤只計一次
+        if (q.type !== 'note' || !q.__countedWrong) {
+          state.score.wrong++;
+          if (q.type === 'note') q.__countedWrong = true;
+        }
+        // 音程辨識：同一題錯誤只計一次
+        if ((q.type === 'interval_up' || q.type === 'interval_down') && !q.__countedWrong) {
+          state.score.wrong++;
+          q.__countedWrong = true;
+        }
+        state.score.streak = 0;
+      }
+      correctEl.textContent=state.score.correct; wrongEl.textContent=state.score.wrong; streakEl.textContent=state.score.streak;
+
+      // 單音模式：答對自動下一題
+      if (q.type==='note' && ok) { setTimeout(()=>newQuestion(), 1500); }
+      // 音程辨識：答對自動下一題
+      if ((q.type==='interval_up' || q.type==='interval_down') && ok) { setTimeout(()=>newQuestion(), 1500); }
+    }
+
+    // ---------- Group switch ----------
+    function setGroup(cMidi){
+      state.groupC = Math.max(MIDI_C1, Math.min(MIDI_C7, cMidi));
+      buildPiano();
+      localStorage.setItem('ear_groupC', String(state.groupC));
+      newQuestion(); // 即時出題
+    }
+
+    // ---------- Events ----------
+    modeEl.addEventListener('change', newQuestion);
+    waveEl.addEventListener('change', ()=>state.wave=waveEl.value);
+    volumeEl.addEventListener('input', ()=>{ ensureAudio(); masterGain.gain.setTargetAtTime(Number(volumeEl.value), audioCtx.currentTime, 0.01); });
+    noteScopeEl.addEventListener('change', ()=>{ state.noteScope = noteScopeEl.value; if (modeEl.value==='note') newQuestion(); });
+    revealEl.addEventListener('change', ()=>{ state.revealSeconds = Number(revealEl.value); localStorage.setItem('ear_revealSeconds', String(state.revealSeconds)); if ((modeEl.value==='note' || modeEl.value==='interval_up' || modeEl.value==='interval_down') && state.current) { ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } });
+    playBtn.addEventListener('click', ()=>{ if(!state.current) newQuestion(); else { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } });
+    repeatBtn.addEventListener('click', ()=>{ if(state.current) { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } });
+    giveUpBtn.addEventListener('click', ()=>{ if(state.current){ showAnswerOnly(); } });
+    nextBtn.addEventListener('click', newQuestion);
+    prevGroupBtn.addEventListener('click', ()=>setGroup(state.groupC-12));
+    nextGroupBtn.addEventListener('click', ()=>setGroup(state.groupC+12));
+    document.addEventListener('keydown', (e)=>{
+      if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+      if(e.code==='Space'){
+        e.preventDefault();
+        if(!state.current){
+          newQuestion();
+        }else{
+          // 重播：先打斷所有聲音、語音和定時器，再從頭播放，並重新啟動計時與提示
+          stopAllAudioAndSpeech();
+          ensureAudio();
+          const playStartTime = audioCtx.currentTime;
+          const questionEndTimeRelative = state.current.play();
+          if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down') {
+            const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative;
+            scheduleReveal(questionEndTimeAbsolute);
+          }
+        }
+      }
+      if(e.key.toLowerCase()==='r'){
+        e.preventDefault();
+        if(state.current){
+          // 重播：先打斷所有聲音、語音和定時器，再從頭播放，並重新啟動計時與提示
+          stopAllAudioAndSpeech();
+          ensureAudio();
+          const playStartTime = audioCtx.currentTime;
+          const questionEndTimeRelative = state.current.play();
+          if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down') {
+            const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative;
+            scheduleReveal(questionEndTimeAbsolute);
+          }
+        }
+      }
+      if(e.key.toLowerCase()==='n'){ e.preventDefault(); newQuestion(); }
+      if(e.key==='ArrowLeft'){ e.preventDefault(); setGroup(state.groupC-12); }
+      if(e.key==='ArrowRight'){ e.preventDefault(); setGroup(state.groupC+12); }
+    });
+
+    // ---------- Init ----------
+    (function init(){
+      const saved = Number(localStorage.getItem('ear_groupC'));
+      if(!Number.isNaN(saved)) state.groupC = saved;
+      const savedReveal = Number(localStorage.getItem('ear_revealSeconds'));
+      if(!Number.isNaN(savedReveal) && [1,3,5,7].includes(savedReveal)) state.revealSeconds = savedReveal;
+      buildPiano();
+      groupLabelEl.textContent = nameRange(state.groupC);
+      // 同步下拉。
+      revealEl.value = String(state.revealSeconds);
+      
+      // 预加载语音列表，确保语音可用
+      ensureVoicesLoaded(() => {
+        // 语音列表已加载
+      });
+    })();
+  </script>
+</body>
+</html>
