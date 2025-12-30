@@ -332,15 +332,35 @@
       revealSeconds:5 // 1 | 3 | 5 | 7（單音模式和音程模式用）
     };
     function currentLow(){ return state.groupC; }
-    function currentHigh(){ return state.groupC + 12; } // 含上界 C
+    function currentHigh(){ 
+      // 检查当前模式，如果是三和弦或七和弦，返回2个音区的上界
+      const currentMode = modeEl ? modeEl.value : 'note';
+      const isChordMode = currentMode === 'triad' || currentMode === 'seventh';
+      return state.groupC + (isChordMode ? 24 : 12); // 含上界 C
+    }
 
     // ---------- Piano ----------
     function buildPiano(){
       pianoEl.innerHTML = '';
+      // 检查当前模式，如果是三和弦或七和弦，显示2个音区
+      const currentMode = modeEl ? modeEl.value : 'note';
+      const isChordMode = currentMode === 'triad' || currentMode === 'seventh';
+      const octaveCount = isChordMode ? 2 : 1; // 三和弦和七和弦显示2个音区
+      const totalKeys = isChordMode ? 15 : 8; // 2个音区 = 15个白键（C到C），1个音区 = 8个白键
+      
       const whiteWrap = document.createElement('div');
       whiteWrap.className = 'white-keys';
-      const whiteSteps = [0,2,4,5,7,9,11,12]; // C D E F G A B C
-      const whiteMidis = whiteSteps.map(st => state.groupC + st);
+      const whiteSteps = [0,2,4,5,7,9,11]; // C D E F G A B（一个八度的白键）
+      const whiteMidis = [];
+      // 生成所有白键
+      for(let octave = 0; octave < octaveCount; octave++){
+        whiteSteps.forEach(st => {
+          whiteMidis.push(state.groupC + st + octave * 12);
+        });
+      }
+      // 添加最后一个C（上界）
+      whiteMidis.push(state.groupC + octaveCount * 12);
+      
       whiteMidis.forEach(m => {
         const wk = document.createElement('div');
         wk.className = 'white-key';
@@ -355,31 +375,41 @@
       });
       pianoEl.appendChild(whiteWrap);
 
-      const whiteWidth = 100 / whiteSteps.length; // 8
-      [
-        { st:1, afterWhiteIdx:0 }, // C#
-        { st:3, afterWhiteIdx:1 }, // D#
-        { st:6, afterWhiteIdx:3 }, // F#
-        { st:8, afterWhiteIdx:4 }, // G#
-        { st:10,afterWhiteIdx:5 }  // A#
-      ].forEach(b=>{
-        const m = state.groupC + b.st;
-        const left = (b.afterWhiteIdx+1)*whiteWidth;
-        const bk = document.createElement('div');
-        bk.className = 'black-key';
-        bk.dataset.midi = String(m);
-        bk.style.left = left + '%';
-        bk.style.width = (whiteWidth*0.6) + '%';
-        bk.addEventListener('mousedown', ()=>playKey(m));
-        bk.addEventListener('touchstart', (e)=>{e.preventDefault(); playKey(m);}, {passive:false});
-        const lbl = document.createElement('div');
-        lbl.className = 'key-label key-label--black';
-        lbl.textContent = midiBlackLabel(m);
-        bk.appendChild(lbl);
-        pianoEl.appendChild(bk);
-      });
+      const whiteWidth = 100 / totalKeys;
+      // 生成所有黑键
+      for(let octave = 0; octave < octaveCount; octave++){
+        [
+          { st:1, afterWhiteIdx:0 }, // C#
+          { st:3, afterWhiteIdx:1 }, // D#
+          { st:6, afterWhiteIdx:3 }, // F#
+          { st:8, afterWhiteIdx:4 }, // G#
+          { st:10,afterWhiteIdx:5 }  // A#
+        ].forEach(b=>{
+          const m = state.groupC + b.st + octave * 12;
+          // 计算黑键位置：每个音区有7个白键（C到B），加上音区偏移
+          const whiteKeyIndex = b.afterWhiteIdx + octave * 7;
+          const left = (whiteKeyIndex + 1) * whiteWidth;
+          const bk = document.createElement('div');
+          bk.className = 'black-key';
+          bk.dataset.midi = String(m);
+          bk.style.left = left + '%';
+          bk.style.width = (whiteWidth*0.6) + '%';
+          bk.addEventListener('mousedown', ()=>playKey(m));
+          bk.addEventListener('touchstart', (e)=>{e.preventDefault(); playKey(m);}, {passive:false});
+          const lbl = document.createElement('div');
+          lbl.className = 'key-label key-label--black';
+          lbl.textContent = midiBlackLabel(m);
+          bk.appendChild(lbl);
+          pianoEl.appendChild(bk);
+        });
+      }
 
-      groupLabelEl.textContent = nameRange(state.groupC);
+      // 更新组别标签
+      if(isChordMode){
+        groupLabelEl.textContent = nameRange(state.groupC) + '–' + midiToName(state.groupC + 24);
+      } else {
+        groupLabelEl.textContent = nameRange(state.groupC);
+      }
     }
     function highlightKeys(midis, ms){
       const set = new Set(midis.map(Number));
@@ -461,8 +491,8 @@
         const set = new Set(tones.map(Number));
         const nodes = pianoEl.querySelectorAll('[data-midi]');
         nodes.forEach(n => { if(set.has(Number(n.dataset.midi))) n.classList.add('active'); });
-        const rootMidi = q.tones && q.tones.length > 0 ? q.tones[0] : q.answerKey;
-        const displayName = chordDisplayName(rootMidi, q.chordType);
+        const rootMidi = q.rootMidi || (q.tones && q.tones.length > 0 ? q.tones[0] : q.answerKey);
+        const displayName = chordDisplayName(rootMidi, q.chordType, q.inversion, q.tones);
         solfegeEl.innerHTML = '答案：<b>'+displayName+'</b>';
       } else {
         // 其他模式直接提交答案
@@ -483,6 +513,7 @@
       return `${baseName} to ${targetName} ${intervalLabel}`;
     }
     function playKey(midi){
+      activateSpeech(); // 点击钢琴键时激活语音功能
       playTone(midiToFreq(midi), 900, state.wave);
       highlightKeys([midi], 900);
       // 單音模式、和聲音程模式、三和弦和七和弦模式顯示音名（不带音区），其他音程模式顯示唱名
@@ -875,15 +906,130 @@
         if(candidates.length > 0){
           return candidates[randInt(0, candidates.length-1)];
         }
-        // 如果找不到符合条件的白键组合，使用第一个白键作为根音
-        return whites[0] || low;
+        // 如果找不到符合条件的白键组合，返回 null（让调用者处理）
+        return null;
       }
       return randInt(low, Math.max(low, high - Math.max(...steps)));
     }
     function genTriad(){ 
-      const t=shuffle(TRIADS)[0]; 
-      const r=chooseRoot(t.steps); 
-      const tones=t.steps.map(s=>r+s); 
+      // 如果设置了白键限定，需要确保找到所有音都是白键的和弦
+      let t, r, tones, inversion = 0; // inversion: 0=原位, 1=第一转位, 2=第二转位
+      
+      // 随机选择转位
+      inversion = randInt(0, 2);
+      
+      if(state.noteScope === 'white'){
+        const whiteSet = new Set(whiteMidisInGroup());
+        const shuffledTriads = shuffle(TRIADS);
+        let found = false;
+        // 尝试所有三和弦类型和转位，直到找到符合条件的
+        for(const triad of shuffledTriads){
+          for(let inv = 0; inv <= 2; inv++){
+            // 计算转位后的步数
+            let invertedSteps = [...triad.steps];
+            if(inv === 1){
+              // 第一转位：三音在最低 (4,7,12)
+              invertedSteps = [triad.steps[1], triad.steps[2], triad.steps[0] + 12];
+            } else if(inv === 2){
+              // 第二转位：五音在最低 (7,12,16)
+              invertedSteps = [triad.steps[2], triad.steps[0] + 12, triad.steps[1] + 12];
+            }
+            
+            const candidates = whiteMidisInGroup().filter(root => {
+              return invertedSteps.every(step => {
+                const tone = root + step;
+                return tone <= currentHigh() && whiteSet.has(tone);
+              });
+            });
+            if(candidates.length > 0){
+              t = triad;
+              r = candidates[randInt(0, candidates.length-1)];
+              inversion = inv;
+              tones = invertedSteps.map(s=>r+s);
+              found = true;
+              break;
+            }
+          }
+          if(found) break;
+        }
+        // 如果找不到符合条件的，尝试所有可能的根音和和弦组合
+        if(!found){
+          // 遍历所有三和弦类型和所有可能的白键根音
+          for(const triad of shuffledTriads){
+            for(const root of whiteMidisInGroup()){
+              for(let inv = 0; inv <= 2; inv++){
+                let invertedSteps = [...triad.steps];
+                if(inv === 1){
+                  invertedSteps = [triad.steps[1], triad.steps[2], triad.steps[0] + 12];
+                } else if(inv === 2){
+                  invertedSteps = [triad.steps[2], triad.steps[0] + 12, triad.steps[1] + 12];
+                }
+                const testTones = invertedSteps.map(s=>root+s);
+                // 检查所有音是否都是白键且在范围内
+                if(testTones.every(tone => {
+                  const pc = tone % 12;
+                  return tone <= currentHigh() && !isBlackPC(pc) && whiteSet.has(tone);
+                })){
+                  t = triad;
+                  r = root;
+                  inversion = inv;
+                  tones = testTones;
+                  found = true;
+                  break;
+                }
+              }
+              if(found) break;
+            }
+            if(found) break;
+          }
+          // 如果还是找不到，使用原位和弦
+          if(!found){
+            t = shuffledTriads[0];
+            const whites = whiteMidisInGroup();
+            r = whites[0] || currentLow();
+            inversion = 0;
+            const allTones = t.steps.map(s=>r+s);
+            tones = allTones.filter(tone => {
+              const pc = tone % 12;
+              return tone <= currentHigh() && !isBlackPC(pc) && whiteSet.has(tone);
+            });
+            // 如果过滤后没有足够的音，至少保证根音是白键
+            if(tones.length < 2){
+              tones = [r];
+            }
+          }
+        }
+      } else {
+        t=shuffle(TRIADS)[0]; 
+        r=chooseRoot(t.steps); 
+        inversion = randInt(0, 2);
+        // 计算转位后的步数
+        let invertedSteps = [...t.steps];
+        if(inversion === 1){
+          invertedSteps = [t.steps[1], t.steps[2], t.steps[0] + 12];
+        } else if(inversion === 2){
+          invertedSteps = [t.steps[2], t.steps[0] + 12, t.steps[1] + 12];
+        }
+        tones = invertedSteps.map(s=>r+s);
+        // 确保所有音都在范围内
+        tones = tones.filter(tone => tone <= currentHigh());
+      }
+      // 最终验证：如果设置了白键限定，确保所有音都是白键
+      if(state.noteScope === 'white'){
+        const whiteSet = new Set(whiteMidisInGroup());
+        tones = tones.filter(tone => {
+          const pc = tone % 12;
+          return tone <= currentHigh() && !isBlackPC(pc) && whiteSet.has(tone);
+        });
+        // 如果过滤后没有足够的音，至少保留根音
+        if(tones.length < 2){
+          tones = [r];
+        }
+      }
+      
+      // 转位后的答案键是最低音（转位后的根音位置）
+      const answerKey = Math.min(...tones);
+      
       const freqs=tones.map(midiToFreq);
       const options = shuffle(TRIADS).map(x=>({key:x.q, text:x.label}));
       
@@ -938,18 +1084,142 @@
       
       return { 
         type:'triad', 
-        label:'和弦辨識（三和弦）：先聽 3 次基準音，之後請在鋼琴上點選根音', 
-        answerKey:r, // 根音MIDI值，用于钢琴作答
+        label:'和弦辨識（三和弦）：先聽 3 次基準音，之後請在鋼琴上點選最低音', 
+        answerKey:answerKey, // 转位后的最低音MIDI值，用于钢琴作答
+        rootMidi:r, // 根音MIDI值（用于显示）
         chordType:t.q, // 和弦类型（'maj', 'min', 'dim', 'aug'）
+        inversion:inversion, // 转位：0=原位, 1=第一转位, 2=第二转位
         options, 
         tones, // 保存和弦的所有音，用于答对时高亮钢琴键
         play 
       };
     }
     function genSeventh(){ 
-      const s=shuffle(SEVENTHS)[0]; 
-      const r=chooseRoot(s.steps); 
-      const tones=s.steps.map(x=>r+x); 
+      // 如果设置了白键限定，需要确保找到所有音都是白键的和弦
+      let s, r, tones, inversion = 0; // inversion: 0=原位, 1=第一转位, 2=第二转位, 3=第三转位
+      
+      // 随机选择转位
+      inversion = randInt(0, 3);
+      
+      if(state.noteScope === 'white'){
+        const whiteSet = new Set(whiteMidisInGroup());
+        const shuffledSevenths = shuffle(SEVENTHS);
+        let found = false;
+        // 尝试所有七和弦类型和转位，直到找到符合条件的
+        for(const seventh of shuffledSevenths){
+          for(let inv = 0; inv <= 3; inv++){
+            // 计算转位后的步数
+            let invertedSteps = [...seventh.steps];
+            if(inv === 1){
+              // 第一转位：三音在最低 (4,7,11,12)
+              invertedSteps = [seventh.steps[1], seventh.steps[2], seventh.steps[3], seventh.steps[0] + 12];
+            } else if(inv === 2){
+              // 第二转位：五音在最低 (7,11,12,16)
+              invertedSteps = [seventh.steps[2], seventh.steps[3], seventh.steps[0] + 12, seventh.steps[1] + 12];
+            } else if(inv === 3){
+              // 第三转位：七音在最低 (11,12,16,19)
+              invertedSteps = [seventh.steps[3], seventh.steps[0] + 12, seventh.steps[1] + 12, seventh.steps[2] + 12];
+            }
+            
+            const candidates = whiteMidisInGroup().filter(root => {
+              return invertedSteps.every(step => {
+                const tone = root + step;
+                return tone <= currentHigh() && whiteSet.has(tone);
+              });
+            });
+            if(candidates.length > 0){
+              s = seventh;
+              r = candidates[randInt(0, candidates.length-1)];
+              inversion = inv;
+              tones = invertedSteps.map(x=>r+x);
+              found = true;
+              break;
+            }
+          }
+          if(found) break;
+        }
+        // 如果找不到符合条件的，尝试所有可能的根音和和弦组合
+        if(!found){
+          // 遍历所有七和弦类型和所有可能的白键根音
+          for(const seventh of shuffledSevenths){
+            for(const root of whiteMidisInGroup()){
+              for(let inv = 0; inv <= 3; inv++){
+                let invertedSteps = [...seventh.steps];
+                if(inv === 1){
+                  invertedSteps = [seventh.steps[1], seventh.steps[2], seventh.steps[3], seventh.steps[0] + 12];
+                } else if(inv === 2){
+                  invertedSteps = [seventh.steps[2], seventh.steps[3], seventh.steps[0] + 12, seventh.steps[1] + 12];
+                } else if(inv === 3){
+                  invertedSteps = [seventh.steps[3], seventh.steps[0] + 12, seventh.steps[1] + 12, seventh.steps[2] + 12];
+                }
+                const testTones = invertedSteps.map(x=>root+x);
+                // 检查所有音是否都是白键且在范围内
+                if(testTones.every(tone => {
+                  const pc = tone % 12;
+                  return tone <= currentHigh() && !isBlackPC(pc) && whiteSet.has(tone);
+                })){
+                  s = seventh;
+                  r = root;
+                  inversion = inv;
+                  tones = testTones;
+                  found = true;
+                  break;
+                }
+              }
+              if(found) break;
+            }
+            if(found) break;
+          }
+          // 如果还是找不到，使用原位和弦
+          if(!found){
+            s = shuffledSevenths[0];
+            const whites = whiteMidisInGroup();
+            r = whites[0] || currentLow();
+            inversion = 0;
+            const allTones = s.steps.map(x=>r+x);
+            tones = allTones.filter(tone => {
+              const pc = tone % 12;
+              return tone <= currentHigh() && !isBlackPC(pc) && whiteSet.has(tone);
+            });
+            // 如果过滤后没有足够的音，至少保证根音是白键
+            if(tones.length < 2){
+              tones = [r];
+            }
+          }
+        }
+      } else {
+        s=shuffle(SEVENTHS)[0]; 
+        r=chooseRoot(s.steps); 
+        inversion = randInt(0, 3);
+        // 计算转位后的步数
+        let invertedSteps = [...s.steps];
+        if(inversion === 1){
+          invertedSteps = [s.steps[1], s.steps[2], s.steps[3], s.steps[0] + 12];
+        } else if(inversion === 2){
+          invertedSteps = [s.steps[2], s.steps[3], s.steps[0] + 12, s.steps[1] + 12];
+        } else if(inversion === 3){
+          invertedSteps = [s.steps[3], s.steps[0] + 12, s.steps[1] + 12, s.steps[2] + 12];
+        }
+        tones = invertedSteps.map(x=>r+x);
+        // 确保所有音都在范围内
+        tones = tones.filter(tone => tone <= currentHigh());
+      }
+      // 最终验证：如果设置了白键限定，确保所有音都是白键
+      if(state.noteScope === 'white'){
+        const whiteSet = new Set(whiteMidisInGroup());
+        tones = tones.filter(tone => {
+          const pc = tone % 12;
+          return tone <= currentHigh() && !isBlackPC(pc) && whiteSet.has(tone);
+        });
+        // 如果过滤后没有足够的音，至少保留根音
+        if(tones.length < 2){
+          tones = [r];
+        }
+      }
+      
+      // 转位后的答案键是最低音（转位后的根音位置）
+      const answerKey = Math.min(...tones);
+      
       const freqs=tones.map(midiToFreq);
       const options = shuffle(SEVENTHS).map(x=>({key:x.q, text:x.label}));
       
@@ -1004,9 +1274,11 @@
       
       return { 
         type:'seventh', 
-        label:'和弦辨識（七和弦）：先聽 3 次基準音，之後請在鋼琴上點選根音', 
-        answerKey:r, // 根音MIDI值，用于钢琴作答
+        label:'和弦辨識（七和弦）：先聽 3 次基準音，之後請在鋼琴上點選最低音', 
+        answerKey:answerKey, // 转位后的最低音MIDI值，用于钢琴作答
+        rootMidi:r, // 根音MIDI值（用于显示）
         chordType:s.q, // 和弦类型（'maj7', '7', 'min7', 'm7b5', 'dim7'）
+        inversion:inversion, // 转位：0=原位, 1=第一转位, 2=第二转位, 3=第三转位
         options, 
         tones, // 保存和弦的所有音，用于答对时高亮钢琴键
         play 
@@ -1066,61 +1338,179 @@
     }
     // ---------- Auto reveal (單音) ----------
     let __revealTimerId = null;
-    // 确保语音列表已加载
+    let __speechActivated = false; // 标记语音是否已激活（移动端需要用户交互）
+    
+    // 检查是否支持语音合成
+    function isSpeechSynthesisSupported(){
+      return typeof speechSynthesis !== 'undefined' && speechSynthesis !== null;
+    }
+    
+    // 激活语音功能（移动端需要用户交互后才能使用）
+    function activateSpeech(){
+      if(__speechActivated || !isSpeechSynthesisSupported()) return;
+      
+      try {
+        // 移动端：通过播放一个静音的测试语音来激活语音功能
+        const testUtterance = new SpeechSynthesisUtterance('');
+        testUtterance.volume = 0;
+        testUtterance.onstart = () => {
+          __speechActivated = true;
+          speechSynthesis.cancel(); // 立即取消测试语音
+        };
+        testUtterance.onerror = () => {
+          // 即使出错也标记为已尝试激活
+          __speechActivated = true;
+        };
+        speechSynthesis.speak(testUtterance);
+        // 如果立即完成，也标记为已激活
+        setTimeout(() => {
+          if(!__speechActivated){
+            __speechActivated = true;
+            speechSynthesis.cancel();
+          }
+        }, 100);
+      } catch(e) {
+        console.warn('Speech activation error:', e);
+        __speechActivated = true; // 标记为已尝试，避免重复尝试
+      }
+    }
+    // 确保语音列表已加载（移动端兼容）
     function ensureVoicesLoaded(callback){
+      if(!isSpeechSynthesisSupported()){
+        // 如果不支持语音合成，直接执行回调（不播放语音）
+        if(typeof callback === 'function') callback();
+        return;
+      }
+      
       const voices = speechSynthesis.getVoices();
       if(voices.length > 0){
         callback();
       } else {
-        // 如果语音列表未加载，等待加载完成
+        // 移动端可能需要多次尝试
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        const tryLoad = () => {
+          attempts++;
+          const voices = speechSynthesis.getVoices();
+          if(voices.length > 0){
+            callback();
+          } else if(attempts < maxAttempts){
+            // 移动端可能需要更长时间加载，延迟重试
+            setTimeout(tryLoad, 100);
+          } else {
+            // 超时后仍然执行回调（即使没有语音）
+            callback();
+          }
+        };
+        
+        // 监听语音列表变化事件
         speechSynthesis.onvoiceschanged = () => {
           speechSynthesis.onvoiceschanged = null;
-          callback();
+          tryLoad();
         };
+        
+        // 立即尝试一次
+        setTimeout(tryLoad, 100);
       }
     }
     
     function speakText(text, onEnd){
+      if(!isSpeechSynthesisSupported()){
+        // 如果不支持语音合成，直接执行回调
+        if(typeof onEnd === 'function'){
+          setTimeout(() => { try { onEnd(); } catch(_) {} }, 100);
+        }
+        return;
+      }
+      
+      // 如果语音未激活，先尝试激活（移动端需要用户交互）
+      if(!__speechActivated){
+        activateSpeech();
+        // 延迟一点再播放，确保激活完成
+        setTimeout(() => {
+          speakText(text, onEnd);
+        }, 200);
+        return;
+      }
+      
       try {
         ensureVoicesLoaded(() => {
-          const u = new SpeechSynthesisUtterance(String(text));
-          u.lang = 'en-US';
-          
-          // 优化语音参数，使其更饱满、更人性化
-          u.rate = 0.85;  // 语速稍慢，更清晰（默认1.0，范围0.1-10）
-          u.pitch = 1.1;  // 音调稍高，更生动（默认1.0，范围0-2）
-          u.volume = 1.0; // 音量最大（默认1.0，范围0-1）
-          
-          // 尝试选择更自然的语音
-          const voices = speechSynthesis.getVoices();
-          // 优先选择更自然的语音（通常名称包含 "Natural" 或 "Neural"）
-          const preferredVoices = voices.filter(v => 
-            v.lang.startsWith('en') && (
-              v.name.toLowerCase().includes('natural') ||
-              v.name.toLowerCase().includes('neural') ||
-              v.name.toLowerCase().includes('premium') ||
-              v.name.toLowerCase().includes('enhanced')
-            )
-          );
-          if(preferredVoices.length > 0){
-            u.voice = preferredVoices[0];
-          } else {
-            // 如果没有找到优先语音，选择质量较好的英文语音
-            const englishVoices = voices.filter(v => v.lang.startsWith('en-US'));
-            if(englishVoices.length > 0){
-              // 优先选择非系统默认的语音（通常质量更好）
-              const nonDefaultVoice = englishVoices.find(v => !v.name.toLowerCase().includes('sapi')) || englishVoices[0];
-              u.voice = nonDefaultVoice;
+          try {
+            // 移动端：先取消之前的语音，确保新语音可以播放
+            speechSynthesis.cancel();
+            
+            // 移动端：需要短暂延迟以确保cancel完成
+            setTimeout(() => {
+              try {
+                const u = new SpeechSynthesisUtterance(String(text));
+                u.lang = 'en-US';
+                
+                // 优化语音参数，使其更饱满、更人性化
+                u.rate = 0.85;  // 语速稍慢，更清晰（默认1.0，范围0.1-10）
+                u.pitch = 1.1;  // 音调稍高，更生动（默认1.0，范围0-2）
+                u.volume = 1.0; // 音量最大（默认1.0，范围0-1）
+                
+                // 尝试选择更自然的语音
+                const voices = speechSynthesis.getVoices();
+                if(voices.length > 0){
+                  // 优先选择更自然的语音（通常名称包含 "Natural" 或 "Neural"）
+                  const preferredVoices = voices.filter(v => 
+                    v.lang.startsWith('en') && (
+                      v.name.toLowerCase().includes('natural') ||
+                      v.name.toLowerCase().includes('neural') ||
+                      v.name.toLowerCase().includes('premium') ||
+                      v.name.toLowerCase().includes('enhanced')
+                    )
+                  );
+                  if(preferredVoices.length > 0){
+                    u.voice = preferredVoices[0];
+                  } else {
+                    // 如果没有找到优先语音，选择质量较好的英文语音
+                    const englishVoices = voices.filter(v => v.lang.startsWith('en'));
+                    if(englishVoices.length > 0){
+                      // 优先选择非系统默认的语音（通常质量更好）
+                      const nonDefaultVoice = englishVoices.find(v => !v.name.toLowerCase().includes('sapi')) || englishVoices[0];
+                      u.voice = nonDefaultVoice;
+                    }
+                  }
+                }
+                
+                // 错误处理
+                u.onerror = (e) => {
+                  console.warn('Speech synthesis error:', e);
+                  if(typeof onEnd === 'function'){
+                    setTimeout(() => { try { onEnd(); } catch(_) {} }, 100);
+                  }
+                };
+                
+                if (typeof onEnd === 'function') {
+                  u.onend = () => { 
+                    try { onEnd(); } catch(_) {} 
+                  };
+                }
+                
+                speechSynthesis.speak(u);
+              } catch(e) {
+                console.warn('Speech synthesis speak error:', e);
+                if(typeof onEnd === 'function'){
+                  setTimeout(() => { try { onEnd(); } catch(_) {} }, 100);
+                }
+              }
+            }, 50); // 50ms延迟，确保cancel完成
+          } catch(e) {
+            console.warn('Speech synthesis setup error:', e);
+            if(typeof onEnd === 'function'){
+              setTimeout(() => { try { onEnd(); } catch(_) {} }, 100);
             }
           }
-          
-          if (typeof onEnd === 'function') {
-            u.onend = () => { try { onEnd(); } catch(_) {} };
-          }
-          speechSynthesis.cancel();
-          speechSynthesis.speak(u);
         });
-      } catch(_) {}
+      } catch(e) {
+        console.warn('Speech synthesis error:', e);
+        if(typeof onEnd === 'function'){
+          setTimeout(() => { try { onEnd(); } catch(_) {} }, 100);
+        }
+      }
     }
     function englishNoteNameForMidi(midi){
       const pc = Number(midi) % 12;
@@ -1203,7 +1593,8 @@
       return `${rootName} ${chordName}`;
     }
     // 获取和弦显示名称（不带音区），例如 "Cmaj7", "Cmin", "Cdim" 等
-    function chordDisplayName(rootMidi, chordType){
+    // 支持转位显示，例如 "Cmaj/E"（第一转位），"Cmaj/G"（第二转位）
+    function chordDisplayName(rootMidi, chordType, inversion, tones){
       const rootName = midiToNoteNameOnly(rootMidi);
       // 将和弦类型转换为简写
       const chordTypeMap = {
@@ -1218,7 +1609,20 @@
         'dim7': 'dim7'
       };
       const chordShort = chordTypeMap[chordType] || chordType;
-      return rootName + chordShort;
+      let displayName = rootName + chordShort;
+      
+      // 如果有转位且最低音不是根音，添加转位标记
+      if(inversion !== undefined && inversion !== null && inversion > 0 && tones && tones.length > 0){
+        // 找到最低音（转位后的 bass note）
+        const bassMidi = Math.min(...tones.map(Number));
+        const bassName = midiToNoteNameOnly(bassMidi);
+        // 如果最低音不是根音，添加转位标记
+        if(bassMidi % 12 !== rootMidi % 12){
+          displayName = displayName + '/' + bassName;
+        }
+      }
+      
+      return displayName;
     }
     
     function scheduleReveal(questionEndTime){
@@ -1348,7 +1752,7 @@
         } else if(state.current.type === 'triad'){
           // 三和弦辨識：先播放分解和弦，再播放和聲，最後播放語音
           const tones = state.current.tones || [];
-          const rootMidi = Number(state.current.answerKey); // 根音
+          const rootMidi = Number(state.current.rootMidi || state.current.answerKey); // 根音（用于显示和弦名称）
           const chordType = state.current.chordType;
           
           // 激活答案音状态提示
@@ -1378,7 +1782,7 @@
           }, harmonyWhen * 1000);
           
           // 播放答案音時才顯示「答案：」使用和弦名稱（不带音区）
-          const displayName = chordDisplayName(rootMidi, chordType);
+          const displayName = chordDisplayName(rootMidi, chordType, state.current.inversion, tones);
           solfegeEl.innerHTML = '答案：<b>'+displayName+'</b>';
           
           // 等和弦播放完成後再念語音
@@ -1395,7 +1799,7 @@
         } else if(state.current.type === 'seventh'){
           // 七和弦辨識：先播放分解和弦，再播放和聲，最後播放語音
           const tones = state.current.tones || [];
-          const rootMidi = Number(state.current.answerKey); // 根音
+          const rootMidi = Number(state.current.rootMidi || state.current.answerKey); // 根音（用于显示和弦名称）
           const chordType = state.current.chordType;
           
           // 激活答案音状态提示
@@ -1425,7 +1829,7 @@
           }, harmonyWhen * 1000);
           
           // 播放答案音時才顯示「答案：」使用和弦名稱（不带音区）
-          const displayName = chordDisplayName(rootMidi, chordType);
+          const displayName = chordDisplayName(rootMidi, chordType, state.current.inversion, tones);
           solfegeEl.innerHTML = '答案：<b>'+displayName+'</b>';
           
           // 等和弦播放完成後再念語音
@@ -1604,7 +2008,7 @@
         // 三和弦辨識：答對時顯示答案音提示並播放題目音
         if (q.type === 'triad') {
           const tones = q.tones || [];
-          const rootMidi = Number(q.answerKey);
+          const rootMidi = Number(q.rootMidi || q.answerKey); // 使用根音显示和弦名称
           const chordType = q.chordType;
           
           // 激活答案音状态提示
@@ -1634,7 +2038,7 @@
           }, harmonyWhen * 1000);
           
           // 播放答案音時才顯示「答案：」使用和弦名稱
-          const displayName = chordDisplayName(rootMidi, chordType);
+          const displayName = chordDisplayName(rootMidi, chordType, q.inversion, tones);
           solfegeEl.innerHTML = '答案：<b>'+displayName+'</b>';
           
           // 等和弦播放完成後再念語音
@@ -1651,7 +2055,7 @@
         // 七和弦辨識：答對時先播放分解和弦，再播放和聲
         if (q.type === 'seventh') {
           const tones = q.tones || [];
-          const rootMidi = Number(q.answerKey);
+          const rootMidi = Number(q.rootMidi || q.answerKey); // 使用根音显示和弦名称
           const chordType = q.chordType;
           
           // 激活答案音状态提示
@@ -1681,7 +2085,7 @@
           }, harmonyWhen * 1000);
           
           // 播放答案音時才顯示「答案：」使用和弦名稱
-          const displayName = chordDisplayName(rootMidi, chordType);
+          const displayName = chordDisplayName(rootMidi, chordType, q.inversion, tones);
           solfegeEl.innerHTML = '答案：<b>'+displayName+'</b>';
           
           // 等和弦播放完成後再念語音
@@ -1742,19 +2146,23 @@
     }
 
     // ---------- Events ----------
-    modeEl.addEventListener('change', newQuestion);
+    modeEl.addEventListener('change', ()=>{
+      buildPiano(); // 重新构建钢琴（可能需要在1个或2个音区之间切换）
+      newQuestion();
+    });
     waveEl.addEventListener('change', ()=>state.wave=waveEl.value);
     volumeEl.addEventListener('input', ()=>{ ensureAudio(); masterGain.gain.setTargetAtTime(Number(volumeEl.value), audioCtx.currentTime, 0.01); });
     noteScopeEl.addEventListener('change', ()=>{ state.noteScope = noteScopeEl.value; if (modeEl.value==='note') newQuestion(); });
     revealEl.addEventListener('change', ()=>{ state.revealSeconds = Number(revealEl.value); localStorage.setItem('ear_revealSeconds', String(state.revealSeconds)); if ((modeEl.value==='note' || modeEl.value==='interval_up' || modeEl.value==='interval_down' || modeEl.value==='interval_harm' || modeEl.value==='triad' || modeEl.value==='seventh') && state.current) { ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } });
-    playBtn.addEventListener('click', ()=>{ if(!state.current) newQuestion(); else { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } });
-    repeatBtn.addEventListener('click', ()=>{ if(state.current) { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } });
-    giveUpBtn.addEventListener('click', ()=>{ if(state.current){ showAnswerOnly(); } });
-    nextBtn.addEventListener('click', newQuestion);
+    playBtn.addEventListener('click', ()=>{ activateSpeech(); if(!state.current) newQuestion(); else { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } });
+    repeatBtn.addEventListener('click', ()=>{ activateSpeech(); if(state.current) { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } });
+    giveUpBtn.addEventListener('click', ()=>{ activateSpeech(); if(state.current){ showAnswerOnly(); } });
+    nextBtn.addEventListener('click', ()=>{ activateSpeech(); newQuestion(); });
     prevGroupBtn.addEventListener('click', ()=>setGroup(state.groupC-12));
     nextGroupBtn.addEventListener('click', ()=>setGroup(state.groupC+12));
     document.addEventListener('keydown', (e)=>{
       if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+      activateSpeech(); // 键盘交互时激活语音
       if(e.code==='Space'){
         e.preventDefault();
         if(!state.current){
