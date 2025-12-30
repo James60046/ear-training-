@@ -2044,7 +2044,11 @@
       } else { 
         ok=String(chosen)===String(q.answerKey); 
       }
-      q.__answered = true;
+      
+      // 答對時標記為已答，答錯時不標記（允許繼續嘗試）
+      if(ok) {
+        q.__answered = true;
+      }
 
       if (ok) {
         state.score.correct++;
@@ -2231,6 +2235,7 @@
           }, totalDuration * 1000);
         }
       } else {
+        // 答錯時也要播放答案音並繼續循環播放
         // 單音模式：同一題錯誤只計一次
         if (q.type !== 'note' || !q.__countedWrong) {
           state.score.wrong++;
@@ -2257,6 +2262,244 @@
           q.__countedWrong = true;
         }
         state.score.streak = 0;
+        
+        // 答錯時也播放答案音（和答對時一樣）
+        // 單音模式：答錯時顯示答案音提示並播放答案
+        if (q.type === 'note') {
+          const ansMidi = Number(q.answerKey);
+          const answerFreq = midiToFreq(ansMidi);
+          playTone(answerFreq, 1000, state.wave, 15, 0);
+          // 答案音鍵與提示字同步亮 1000ms，然後一起熄滅
+          highlightAnswer(ansMidi);
+          setTimeout(()=>{ clearAnswerHighlight(ansMidi); }, 1000);
+          // 播放答案音時才顯示「答案：」使用音名
+          solfegeEl.innerHTML = '答案：<b>'+midiToNoteNameOnly(ansMidi)+'</b>';
+          
+          // 等音符播放完成後再念語音，然後循環播放
+          setTimeout(() => {
+            const pc = Number(ansMidi) % 12;
+            const sharpName = PCN[pc];
+            const engName = sharpName.replace('#', '-Sharp');
+            speakText(engName, () => {
+              // 語音播畢後，先讓答案燈號一起熄滅，再循環播放
+              clearAnswerHighlight(ansMidi);
+              setTimeout(()=>{ 
+                // 循環播放：重播題目
+                q.__answered = false; // 重置答題狀態，允許繼續答題
+                stopAllAudioAndSpeech();
+                ensureAudio();
+                const playStartTime = audioCtx.currentTime;
+                const questionEndTimeRelative = q.play();
+                if(q.type==='note' || q.type==='interval_up' || q.type==='interval_down' || q.type==='interval_harm' || q.type==='triad' || q.type==='seventh'){
+                  const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative;
+                  scheduleReveal(questionEndTimeAbsolute);
+                }
+              }, 600);
+            });
+          }, 1000);
+        }
+        // 音程辨識：答錯時顯示答案音提示並播放題目音
+        else if (q.type === 'interval_up' || q.type === 'interval_down') {
+          const ansMidi = Number(q.answerKey);
+          const baseMidi = Number(q.baseMidi);
+          const intervalSteps = Number(q.intervalSteps);
+          
+          // 激活答案音状态提示
+          updateStatusHint(hintAnswerEl, true);
+          
+          // 播放題目音：先播放題目音的第一個音，再播放題目音的第二個音
+          if(q.type === 'interval_up'){
+            playTone(midiToFreq(baseMidi), 600, state.wave, 15, 0);
+            highlightKeysManual([baseMidi]);
+            playTone(midiToFreq(ansMidi), 1000, state.wave, 15, 0.7);
+            setTimeout(()=>highlightKeysManual([ansMidi]), 700);
+            const answerText = formatIntervalAnswer(baseMidi, ansMidi, intervalSteps);
+            solfegeEl.innerHTML = '答案：<b>'+answerText+'</b>';
+          } else {
+            playTone(midiToFreq(baseMidi), 600, state.wave, 15, 0);
+            highlightKeysManual([baseMidi]);
+            playTone(midiToFreq(ansMidi), 1000, state.wave, 15, 0.7);
+            setTimeout(()=>highlightKeysManual([ansMidi]), 700);
+            const answerText = formatIntervalAnswer(baseMidi, ansMidi, intervalSteps);
+            solfegeEl.innerHTML = '答案：<b>'+answerText+'</b>';
+          }
+          
+          // 等音程播放完成後再念語音，然後循環播放
+          setTimeout(() => {
+            const speechText = intervalSpeechText(baseMidi, ansMidi, intervalSteps);
+            speakText(speechText, () => {
+              // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再循環播放
+              clearKeysHighlight([baseMidi, ansMidi]);
+              updateStatusHint(null, false);
+              setTimeout(()=>{ 
+                // 循環播放：重播題目
+                q.__answered = false; // 重置答題狀態，允許繼續答題
+                stopAllAudioAndSpeech();
+                ensureAudio();
+                const playStartTime = audioCtx.currentTime;
+                const questionEndTimeRelative = q.play();
+                if(q.type==='note' || q.type==='interval_up' || q.type==='interval_down' || q.type==='interval_harm' || q.type==='triad' || q.type==='seventh'){
+                  const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative;
+                  scheduleReveal(questionEndTimeAbsolute);
+                }
+              }, 600);
+            });
+          }, 1700);
+        }
+        // 和聲音程辨識：答錯時顯示答案音提示並播放題目音
+        else if (q.type === 'interval_harm') {
+          const baseMidi = Number(q.baseMidi);
+          const otherMidi = Number(q.otherMidi);
+          const intervalSteps = Number(q.intervalSteps);
+          
+          // 激活答案音状态提示
+          updateStatusHint(hintAnswerEl, true);
+          
+          // 播放題目音：同時播放base和other（和聲音程）
+          const bf = midiToFreq(baseMidi), of = midiToFreq(otherMidi);
+          playTone(bf, 1100, state.wave, 15, 0);
+          playTone(of, 1100, state.wave, 15, 0);
+          highlightKeysManual([baseMidi, otherMidi]);
+          
+          const answerText = formatIntervalAnswer(baseMidi, otherMidi, intervalSteps);
+          solfegeEl.innerHTML = '答案：<b>'+answerText+'</b>';
+          
+          // 等音程播放完成後再念語音，然後循環播放
+          setTimeout(() => {
+            const speechText = intervalSpeechText(baseMidi, otherMidi, intervalSteps);
+            speakText(speechText, () => {
+              // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再循環播放
+              clearKeysHighlight([baseMidi, otherMidi]);
+              updateStatusHint(null, false);
+              setTimeout(()=>{ 
+                // 循環播放：重播題目
+                q.__answered = false; // 重置答題狀態，允許繼續答題
+                stopAllAudioAndSpeech();
+                ensureAudio();
+                const playStartTime = audioCtx.currentTime;
+                const questionEndTimeRelative = q.play();
+                if(q.type==='note' || q.type==='interval_up' || q.type==='interval_down' || q.type==='interval_harm' || q.type==='triad' || q.type==='seventh'){
+                  const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative;
+                  scheduleReveal(questionEndTimeAbsolute);
+                }
+              }, 600);
+            });
+          }, 1100);
+        }
+        // 三和弦辨識：答錯時顯示答案音提示並播放題目音
+        else if (q.type === 'triad') {
+          const tones = q.tones || [];
+          const rootMidi = Number(q.rootMidi || q.answerKey);
+          const chordType = q.chordType;
+          
+          // 激活答案音状态提示
+          updateStatusHint(hintAnswerEl, true);
+          
+          // 先播放分解和弦（按顺序播放每个音）
+          const arpeggioNoteDur = 300;
+          const arpeggioGap = 0.1;
+          const harmonyDur = 800;
+          
+          tones.forEach((tone, index) => {
+            const when = index * (arpeggioNoteDur/1000 + arpeggioGap);
+            playTone(midiToFreq(tone), arpeggioNoteDur, state.wave, 15, when);
+            setTimeout(() => {
+              highlightKeysManual([tone]);
+            }, when * 1000);
+          });
+          
+          // 再播放和声（同时播放所有音）
+          const harmonyWhen = tones.length * (arpeggioNoteDur/1000 + arpeggioGap) + 0.15;
+          tones.forEach(tone => {
+            playTone(midiToFreq(tone), harmonyDur, state.wave, 15, harmonyWhen);
+          });
+          setTimeout(() => {
+            highlightKeysManual(tones);
+          }, harmonyWhen * 1000);
+          
+          const displayName = chordDisplayName(rootMidi, chordType, q.inversion, tones);
+          solfegeEl.innerHTML = '答案：<b>'+displayName+'</b>';
+          
+          // 等和弦播放完成後再念語音，然後循環播放
+          const totalDuration = harmonyWhen + harmonyDur / 1000;
+          setTimeout(() => {
+            const speechText = chordSpeechText(rootMidi, chordType, false);
+            speakText(speechText, () => {
+              // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再循環播放
+              clearKeysHighlight(tones);
+              updateStatusHint(null, false);
+              setTimeout(()=>{ 
+                // 循環播放：重播題目
+                q.__answered = false; // 重置答題狀態，允許繼續答題
+                stopAllAudioAndSpeech();
+                ensureAudio();
+                const playStartTime = audioCtx.currentTime;
+                const questionEndTimeRelative = q.play();
+                if(q.type==='note' || q.type==='interval_up' || q.type==='interval_down' || q.type==='interval_harm' || q.type==='triad' || q.type==='seventh'){
+                  const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative;
+                  scheduleReveal(questionEndTimeAbsolute);
+                }
+              }, 600);
+            });
+          }, totalDuration * 1000);
+        }
+        // 七和弦辨識：答錯時先播放分解和弦，再播放和聲
+        else if (q.type === 'seventh') {
+          const tones = q.tones || [];
+          const rootMidi = Number(q.rootMidi || q.answerKey);
+          const chordType = q.chordType;
+          
+          // 激活答案音状态提示
+          updateStatusHint(hintAnswerEl, true);
+          
+          // 先播放分解和弦（按顺序播放每个音）
+          const arpeggioNoteDur = 300;
+          const arpeggioGap = 0.1;
+          const harmonyDur = 900;
+          
+          tones.forEach((tone, index) => {
+            const when = index * (arpeggioNoteDur/1000 + arpeggioGap);
+            playTone(midiToFreq(tone), arpeggioNoteDur, state.wave, 15, when);
+            setTimeout(() => {
+              highlightKeysManual([tone]);
+            }, when * 1000);
+          });
+          
+          // 再播放和声（同时播放所有音）
+          const harmonyWhen = tones.length * (arpeggioNoteDur/1000 + arpeggioGap) + 0.15;
+          tones.forEach(tone => {
+            playTone(midiToFreq(tone), harmonyDur, state.wave, 15, harmonyWhen);
+          });
+          setTimeout(() => {
+            highlightKeysManual(tones);
+          }, harmonyWhen * 1000);
+          
+          const displayName = chordDisplayName(rootMidi, chordType, q.inversion, tones);
+          solfegeEl.innerHTML = '答案：<b>'+displayName+'</b>';
+          
+          // 等和弦播放完成後再念語音，然後循環播放
+          const totalDuration = harmonyWhen + harmonyDur / 1000;
+          setTimeout(() => {
+            const speechText = chordSpeechText(rootMidi, chordType, true);
+            speakText(speechText, () => {
+              // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再循環播放
+              clearKeysHighlight(tones);
+              updateStatusHint(null, false);
+              setTimeout(()=>{ 
+                // 循環播放：重播題目
+                q.__answered = false; // 重置答題狀態，允許繼續答題
+                stopAllAudioAndSpeech();
+                ensureAudio();
+                const playStartTime = audioCtx.currentTime;
+                const questionEndTimeRelative = q.play();
+                if(q.type==='note' || q.type==='interval_up' || q.type==='interval_down' || q.type==='interval_harm' || q.type==='triad' || q.type==='seventh'){
+                  const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative;
+                  scheduleReveal(questionEndTimeAbsolute);
+                }
+              }, 600);
+            });
+          }, totalDuration * 1000);
+        }
       }
       correctEl.textContent=state.score.correct; wrongEl.textContent=state.score.wrong; streakEl.textContent=state.score.streak;
 
