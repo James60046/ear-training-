@@ -513,7 +513,10 @@
       return `${baseName} to ${targetName} ${intervalLabel}`;
     }
     function playKey(midi){
-      activateSpeech(); // 点击钢琴键时激活语音功能
+      // 强制激活语音（移动端需要每次用户交互后激活）
+      __speechActivated = false;
+      __speechTestAttempts = 0;
+      activateSpeech(true);
       playTone(midiToFreq(midi), 900, state.wave);
       highlightKeys([midi], 900);
       // 單音模式、和聲音程模式、三和弦和七和弦模式顯示音名（不带音区），其他音程模式顯示唱名
@@ -1385,54 +1388,73 @@
       __speechTestAttempts++;
       
       try {
-        // 移动端：通过播放一个非常短的测试语音来激活语音功能
-        const testText = 'test';
-        const testUtterance = new SpeechSynthesisUtterance(testText);
-        testUtterance.volume = 0.01; // 非常小的音量，几乎听不到
-        testUtterance.rate = 10; // 非常快的速度，几乎瞬间完成
-        
-        let activated = false;
-        
-        testUtterance.onstart = () => {
-          activated = true;
-          __speechActivated = true;
-          speechSynthesis.cancel(); // 立即取消测试语音
-        };
-        
-        testUtterance.onend = () => {
-          if(!activated) {
-            __speechActivated = true;
-          }
-        };
-        
-        testUtterance.onerror = (e) => {
-          // 某些错误可能表示语音功能不可用，但不阻止后续尝试
-          if(e.error === 'not-allowed' || e.error === 'network') {
-            // 这些错误可能需要用户权限，暂时不标记为已激活
-            return;
-          }
-          __speechActivated = true; // 其他错误也标记为已尝试
-        };
-        
-        // 先取消所有正在进行的语音
+        // 移动端：先取消所有正在进行的语音
         speechSynthesis.cancel();
         
-        // 短暂延迟后播放测试语音
+        // 等待cancel完成
         setTimeout(() => {
           try {
-            speechSynthesis.speak(testUtterance);
-            // 设置超时，如果500ms内没有响应，也标记为已尝试
-            setTimeout(() => {
-              if(!__speechActivated) {
+            // 移动端：通过播放一个非常短的测试语音来激活语音功能
+            // 使用一个简单的单词，确保能被识别
+            const testText = 'a';
+            const testUtterance = new SpeechSynthesisUtterance(testText);
+            testUtterance.volume = 0.01; // 非常小的音量，几乎听不到
+            testUtterance.rate = 10; // 非常快的速度，几乎瞬间完成
+            testUtterance.lang = 'en-US';
+            
+            let activated = false;
+            let completed = false;
+            
+            testUtterance.onstart = () => {
+              activated = true;
+              __speechActivated = true;
+              completed = true;
+              // 立即取消测试语音
+              setTimeout(() => {
+                try { speechSynthesis.cancel(); } catch(_) {}
+              }, 10);
+            };
+            
+            testUtterance.onend = () => {
+              if(!activated) {
                 __speechActivated = true;
-                speechSynthesis.cancel();
               }
-            }, 500);
+              completed = true;
+            };
+            
+            testUtterance.onerror = (e) => {
+              completed = true;
+              // 某些错误可能表示语音功能不可用
+              if(e.error === 'not-allowed') {
+                // 权限被拒绝，可能需要用户手动允许
+                console.warn('Speech synthesis not allowed, may need user permission');
+                // 不标记为已激活，允许后续尝试
+                return;
+              }
+              if(e.error === 'network') {
+                // 网络错误，可能是暂时性的
+                console.warn('Speech synthesis network error');
+                return;
+              }
+              // 其他错误也标记为已尝试
+              __speechActivated = true;
+            };
+            
+            // 播放测试语音
+            speechSynthesis.speak(testUtterance);
+            
+            // 设置超时，如果1秒内没有响应，也标记为已尝试
+            setTimeout(() => {
+              if(!completed) {
+                __speechActivated = true;
+                try { speechSynthesis.cancel(); } catch(_) {}
+              }
+            }, 1000);
           } catch(e) {
             console.warn('Speech activation speak error:', e);
-            __speechActivated = true;
+            __speechActivated = true; // 标记为已尝试，避免重复尝试
           }
-        }, 50);
+        }, 100); // 增加延迟，确保cancel完成
       } catch(e) {
         console.warn('Speech activation error:', e);
         __speechActivated = true; // 标记为已尝试，避免重复尝试
@@ -1488,15 +1510,21 @@
         return;
       }
       
-      // 每次播放前都检查并尝试激活（移动端可能状态不稳定）
+      // 每次播放前都强制激活（移动端需要每次用户交互后激活）
+      // 重置激活状态，强制重新激活
       if(!__speechActivated || !isSpeechActuallyAvailable()){
-        activateSpeech();
+        __speechActivated = false;
+        __speechTestAttempts = 0; // 重置尝试次数
+        activateSpeech(true); // 强制激活
         // 延迟一点再播放，确保激活完成
         setTimeout(() => {
           speakText(text, onEnd);
-        }, 300);
+        }, 500); // 增加延迟到500ms，确保激活完成
         return;
       }
+      
+      // 即使已激活，也再次尝试激活以确保可用（移动端可能状态不稳定）
+      activateSpeech();
       
       try {
         ensureVoicesLoaded(() => {
@@ -2257,15 +2285,42 @@
     volumeEl.addEventListener('input', ()=>{ ensureAudio(); masterGain.gain.setTargetAtTime(Number(volumeEl.value), audioCtx.currentTime, 0.01); });
     noteScopeEl.addEventListener('change', ()=>{ state.noteScope = noteScopeEl.value; if (modeEl.value==='note') newQuestion(); });
     revealEl.addEventListener('change', ()=>{ state.revealSeconds = Number(revealEl.value); localStorage.setItem('ear_revealSeconds', String(state.revealSeconds)); if ((modeEl.value==='note' || modeEl.value==='interval_up' || modeEl.value==='interval_down' || modeEl.value==='interval_harm' || modeEl.value==='triad' || modeEl.value==='seventh') && state.current) { ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } });
-    playBtn.addEventListener('click', ()=>{ activateSpeech(); if(!state.current) newQuestion(); else { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } });
-    repeatBtn.addEventListener('click', ()=>{ activateSpeech(); if(state.current) { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } });
-    giveUpBtn.addEventListener('click', ()=>{ activateSpeech(); if(state.current){ showAnswerOnly(); } });
-    nextBtn.addEventListener('click', ()=>{ activateSpeech(); newQuestion(); });
+    playBtn.addEventListener('click', ()=>{ 
+      // 强制激活语音（移动端需要每次用户交互后激活）
+      __speechActivated = false;
+      __speechTestAttempts = 0;
+      activateSpeech(true);
+      if(!state.current) newQuestion(); else { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } 
+    });
+    repeatBtn.addEventListener('click', ()=>{ 
+      // 强制激活语音
+      __speechActivated = false;
+      __speechTestAttempts = 0;
+      activateSpeech(true);
+      if(state.current) { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } 
+    });
+    giveUpBtn.addEventListener('click', ()=>{ 
+      // 强制激活语音
+      __speechActivated = false;
+      __speechTestAttempts = 0;
+      activateSpeech(true);
+      if(state.current){ showAnswerOnly(); } 
+    });
+    nextBtn.addEventListener('click', ()=>{ 
+      // 强制激活语音
+      __speechActivated = false;
+      __speechTestAttempts = 0;
+      activateSpeech(true);
+      newQuestion(); 
+    });
     prevGroupBtn.addEventListener('click', ()=>setGroup(state.groupC-12));
     nextGroupBtn.addEventListener('click', ()=>setGroup(state.groupC+12));
     document.addEventListener('keydown', (e)=>{
       if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
-      activateSpeech(); // 键盘交互时激活语音
+      // 强制激活语音（移动端需要每次用户交互后激活）
+      __speechActivated = false;
+      __speechTestAttempts = 0;
+      activateSpeech(true);
       if(e.code==='Space'){
         e.preventDefault();
         if(!state.current){
