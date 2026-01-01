@@ -1004,18 +1004,47 @@
         }
       } else {
         t=shuffle(TRIADS)[0]; 
-        r=chooseRoot(t.steps); 
         inversion = randInt(0, 2);
-        // 计算转位后的步数
+        // 先计算转位后的步数
         let invertedSteps = [...t.steps];
         if(inversion === 1){
           invertedSteps = [t.steps[1], t.steps[2], t.steps[0] + 12];
         } else if(inversion === 2){
           invertedSteps = [t.steps[2], t.steps[0] + 12, t.steps[1] + 12];
         }
+        // 根据转位后的步数选择根音，确保所有音都在范围内
+        r=chooseRoot(invertedSteps); 
+        if(r === null){
+          // 如果chooseRoot返回null（白键限定情况下找不到），使用第一个可用根音
+          r = currentLow();
+        }
         tones = invertedSteps.map(s=>r+s);
-        // 确保所有音都在范围内
+        // 最终验证：确保所有音都在范围内
         tones = tones.filter(tone => tone <= currentHigh());
+        // 如果过滤后音不够，重新选择根音（向下调整）
+        if(tones.length < 3){
+          const maxStep = Math.max(...invertedSteps);
+          const low = currentLow();
+          const high = currentHigh();
+          // 确保根音 + 最大步数 <= 上界
+          const maxRoot = high - maxStep;
+          if(maxRoot >= low){
+            r = randInt(low, maxRoot);
+            tones = invertedSteps.map(s=>r+s).filter(tone => tone <= high);
+            // 如果仍然不够，至少保留能容纳的音
+            if(tones.length < 3 && tones.length > 0){
+              // 至少保留已有的音
+            } else if(tones.length === 0){
+              // 如果完全没有音，至少使用根音
+              r = low;
+              tones = [r];
+            }
+          } else {
+            // 如果范围太小，至少使用根音
+            r = low;
+            tones = [r];
+          }
+        }
       }
       // 最终验证：如果设置了白键限定，确保所有音都是白键
       if(state.noteScope === 'white'){
@@ -1192,9 +1221,8 @@
         }
       } else {
         s=shuffle(SEVENTHS)[0]; 
-        r=chooseRoot(s.steps); 
         inversion = randInt(0, 3);
-        // 计算转位后的步数
+        // 先计算转位后的步数
         let invertedSteps = [...s.steps];
         if(inversion === 1){
           invertedSteps = [s.steps[1], s.steps[2], s.steps[3], s.steps[0] + 12];
@@ -1203,9 +1231,39 @@
         } else if(inversion === 3){
           invertedSteps = [s.steps[3], s.steps[0] + 12, s.steps[1] + 12, s.steps[2] + 12];
         }
+        // 根据转位后的步数选择根音，确保所有音都在范围内
+        r=chooseRoot(invertedSteps); 
+        if(r === null){
+          // 如果chooseRoot返回null（白键限定情况下找不到），使用第一个可用根音
+          r = currentLow();
+        }
         tones = invertedSteps.map(x=>r+x);
-        // 确保所有音都在范围内
+        // 最终验证：确保所有音都在范围内
         tones = tones.filter(tone => tone <= currentHigh());
+        // 如果过滤后音不够，重新选择根音（向下调整）
+        if(tones.length < 4){
+          const maxStep = Math.max(...invertedSteps);
+          const low = currentLow();
+          const high = currentHigh();
+          // 确保根音 + 最大步数 <= 上界
+          const maxRoot = high - maxStep;
+          if(maxRoot >= low){
+            r = randInt(low, maxRoot);
+            tones = invertedSteps.map(x=>r+x).filter(tone => tone <= high);
+            // 如果仍然不够，至少保留能容纳的音
+            if(tones.length < 4 && tones.length > 0){
+              // 至少保留已有的音
+            } else if(tones.length === 0){
+              // 如果完全没有音，至少使用根音
+              r = low;
+              tones = [r];
+            }
+          } else {
+            // 如果范围太小，至少使用根音
+            r = low;
+            tones = [r];
+          }
+        }
       }
       // 最终验证：如果设置了白键限定，确保所有音都是白键
       if(state.noteScope === 'white'){
@@ -1344,6 +1402,7 @@
     let __speechActivated = false; // 标记语音是否已激活（移动端需要用户交互）
     let __speechTestAttempts = 0; // 语音测试尝试次数
     const MAX_SPEECH_TEST_ATTEMPTS = 3; // 最多尝试3次激活
+    let __currentQuestionId = 0; // 当前题目ID，用于确保回调只对当前题目执行
     
     // 检查是否支持语音合成
     function isSpeechSynthesisSupported(){
@@ -1556,8 +1615,8 @@
                 u.lang = 'en-US';
                 
                 // 优化语音参数，使其更饱满、更人性化
-                u.rate = 0.85;  // 语速稍慢，更清晰（默认1.0，范围0.1-10）
-                u.pitch = 1.1;  // 音调稍高，更生动（默认1.0，范围0-2）
+                u.rate = 0.95;  // 语速适中，更清晰（默认1.0，范围0.1-10）
+                u.pitch = 1.15;  // 音调稍高，更突出（默认1.0，范围0-2）
                 u.volume = 1.0; // 音量最大（默认1.0，范围0-1）
                 
                 // 尝试选择更自然的语音
@@ -1780,8 +1839,12 @@
         }
       }
       
+      // 保存当前题目的ID，用于在回调中检查
+      const questionId = state.current ? state.current.__questionId : null;
+      
       __revealTimerId = setTimeout(()=>{
-        if(!state.current || state.current.__answered) return;
+        // 检查题目是否仍然是当前题目（防止切换题目后回调仍执行）
+        if(!state.current || state.current.__questionId !== questionId || state.current.__answered) return;
         const ansMidi = Number(state.current.answerKey);
         
         // 播放答案音符
@@ -1797,13 +1860,21 @@
           
           // 等音符播放完成後再念語音（不带音区数字）
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const pc = Number(ansMidi) % 12;
             const sharpName = PCN[pc];
             const engName = sharpName.replace('#', '-Sharp');
             speakText(engName, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號一起熄滅，再稍等出下一題
               clearAnswerHighlight(ansMidi);
-              setTimeout(()=>{ newQuestion(); }, 600);
+              setTimeout(()=>{ 
+                // 再次检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
+                newQuestion(); 
+              }, 600);
             });
           }, 1000); // 等待音符播放完成（1000ms）
         } else if(state.current.type === 'interval_up' || state.current.type === 'interval_down'){
@@ -1842,12 +1913,20 @@
           
           // 等音程播放完成後再念語音（600ms基準音 + 1000ms目標音 + 100ms間隔）
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const speechText = intervalSpeechText(baseMidi, ansMidi, intervalSteps);
             speakText(speechText, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再稍等出下一題
               clearKeysHighlight([baseMidi, ansMidi]);
               updateStatusHint(null, false);
-              setTimeout(()=>{ newQuestion(); }, 600);
+              setTimeout(()=>{ 
+                // 再次检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
+                newQuestion(); 
+              }, 600);
             });
           }, 1700); // 等待音程播放完成（1700ms）
         } else if(state.current.type === 'interval_harm'){
@@ -1872,12 +1951,20 @@
           
           // 等音程播放完成後再念語音
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const speechText = intervalSpeechText(baseMidi, otherMidi, intervalSteps);
             speakText(speechText, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再稍等出下一題
               clearKeysHighlight([baseMidi, otherMidi]);
               updateStatusHint(null, false);
-              setTimeout(()=>{ newQuestion(); }, 600);
+              setTimeout(()=>{ 
+                // 再次检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
+                newQuestion(); 
+              }, 600);
             });
           }, 1100); // 等待音程播放完成（1100ms）
         } else if(state.current.type === 'triad'){
@@ -1919,12 +2006,20 @@
           // 等和弦播放完成後再念語音
           const totalDuration = harmonyWhen + harmonyDur / 1000;
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const speechText = chordSpeechText(rootMidi, chordType, false);
             speakText(speechText, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再稍等出下一題
               clearKeysHighlight(tones);
               updateStatusHint(null, false);
-              setTimeout(()=>{ newQuestion(); }, 600);
+              setTimeout(()=>{ 
+                // 再次检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
+                newQuestion(); 
+              }, 600);
             });
           }, totalDuration * 1000); // 等待和弦播放完成
         } else if(state.current.type === 'seventh'){
@@ -1966,19 +2061,30 @@
           // 等和弦播放完成後再念語音
           const totalDuration = harmonyWhen + harmonyDur / 1000;
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const speechText = chordSpeechText(rootMidi, chordType, true);
             speakText(speechText, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再稍等出下一題
               clearKeysHighlight(tones);
               updateStatusHint(null, false);
-              setTimeout(()=>{ newQuestion(); }, 600);
+              setTimeout(()=>{ 
+                // 再次检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
+                newQuestion(); 
+              }, 600);
             });
           }, totalDuration * 1000); // 等待和弦播放完成
         }
       }, delayMs);
     }
     function setQuestion(q){
+      // 为新题目分配唯一ID，确保回调只对当前题目执行
+      __currentQuestionId++;
       state.current=q;
+      state.current.__questionId = __currentQuestionId; // 保存题目ID
       state.current.__answered=false;
       state.current.__countedWrong=false; // 單音模式：本題錯誤只計一次
       questionLabel.textContent=q.label;
@@ -2025,6 +2131,8 @@
 
     function submitAnswer(chosen){
       const q=state.current; if(!q) return;
+      // 保存当前题目的ID，用于在回调中检查
+      const questionId = q.__questionId;
       clearRevealTimer();
       let ok=false;
       if(q.type==='note'){ 
@@ -2277,13 +2385,19 @@
           
           // 等音符播放完成後再念語音，然後循環播放
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const pc = Number(ansMidi) % 12;
             const sharpName = PCN[pc];
             const engName = sharpName.replace('#', '-Sharp');
             speakText(engName, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號一起熄滅，再循環播放
               clearAnswerHighlight(ansMidi);
               setTimeout(()=>{ 
+                // 检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
                 // 循環播放：重播題目
                 q.__answered = false; // 重置答題狀態，允許繼續答題
                 stopAllAudioAndSpeech();
@@ -2326,12 +2440,18 @@
           
           // 等音程播放完成後再念語音，然後循環播放
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const speechText = intervalSpeechText(baseMidi, ansMidi, intervalSteps);
             speakText(speechText, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再循環播放
               clearKeysHighlight([baseMidi, ansMidi]);
               updateStatusHint(null, false);
               setTimeout(()=>{ 
+                // 检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
                 // 循環播放：重播題目
                 q.__answered = false; // 重置答題狀態，允許繼續答題
                 stopAllAudioAndSpeech();
@@ -2366,12 +2486,18 @@
           
           // 等音程播放完成後再念語音，然後循環播放
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const speechText = intervalSpeechText(baseMidi, otherMidi, intervalSteps);
             speakText(speechText, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再循環播放
               clearKeysHighlight([baseMidi, otherMidi]);
               updateStatusHint(null, false);
               setTimeout(()=>{ 
+                // 检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
                 // 循環播放：重播題目
                 q.__answered = false; // 重置答題狀態，允許繼續答題
                 stopAllAudioAndSpeech();
@@ -2423,12 +2549,18 @@
           // 等和弦播放完成後再念語音，然後循環播放
           const totalDuration = harmonyWhen + harmonyDur / 1000;
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const speechText = chordSpeechText(rootMidi, chordType, false);
             speakText(speechText, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再循環播放
               clearKeysHighlight(tones);
               updateStatusHint(null, false);
               setTimeout(()=>{ 
+                // 检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
                 // 循環播放：重播題目
                 q.__answered = false; // 重置答題狀態，允許繼續答題
                 stopAllAudioAndSpeech();
@@ -2480,12 +2612,18 @@
           // 等和弦播放完成後再念語音，然後循環播放
           const totalDuration = harmonyWhen + harmonyDur / 1000;
           setTimeout(() => {
+            // 检查题目是否仍然是当前题目
+            if(!state.current || state.current.__questionId !== questionId) return;
             const speechText = chordSpeechText(rootMidi, chordType, true);
             speakText(speechText, () => {
+              // 检查题目是否仍然是当前题目
+              if(!state.current || state.current.__questionId !== questionId) return;
               // 語音播畢後，先讓答案燈號和狀態提示一起熄滅，再循環播放
               clearKeysHighlight(tones);
               updateStatusHint(null, false);
               setTimeout(()=>{ 
+                // 检查题目是否仍然是当前题目
+                if(!state.current || state.current.__questionId !== questionId) return;
                 // 循環播放：重播題目
                 q.__answered = false; // 重置答題狀態，允許繼續答題
                 stopAllAudioAndSpeech();
@@ -2543,10 +2681,7 @@
       if(state.current) { stopAllAudioAndSpeech(); ensureAudio(); const playStartTime = audioCtx.currentTime; const questionEndTimeRelative = state.current.play(); if(state.current.type==='note' || state.current.type==='interval_up' || state.current.type==='interval_down' || state.current.type==='interval_harm' || state.current.type==='triad' || state.current.type==='seventh') { const questionEndTimeAbsolute = playStartTime + questionEndTimeRelative; scheduleReveal(questionEndTimeAbsolute); } } 
     });
     giveUpBtn.addEventListener('click', ()=>{ 
-      // 强制激活语音
-      __speechActivated = false;
-      __speechTestAttempts = 0;
-      activateSpeech(true);
+      // 看答案功能：完全独立，只在钢琴上显示答案，不干扰任何音频或语音
       if(state.current){ showAnswerOnly(); } 
     });
     nextBtn.addEventListener('click', ()=>{ 
